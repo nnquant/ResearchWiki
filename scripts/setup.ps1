@@ -1,6 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$repoRoot = Split-Path $PSScriptRoot -Parent
-$dataRoot = 'D:\data\gbrain'
+. "$PSScriptRoot\deployment.ps1"
 foreach ($folder in @('raw','parsed','wiki','inbox','state','logs','backups','models','models\huggingface','models\modelscope','cache','runtime','runtime\.gbrain','postgres')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $dataRoot $folder) | Out-Null
 }

@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
-$repoRoot = Split-Path $PSScriptRoot -Parent
-$stateFile = 'D:\data\gbrain\state\services.json'
+. "$PSScriptRoot\deployment.ps1"
+$stateFile = Join-Path $dataRoot 'state/services.json'
 if (Test-Path $stateFile) {
     $services = Get-Content $stateFile -Raw | ConvertFrom-Json -AsHashtable
     foreach ($entry in $services.GetEnumerator()) {

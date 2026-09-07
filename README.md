@@ -18,7 +18,7 @@
 
 ## 安装（Windows）
 
-当前安装脚本面向 Windows、PowerShell 7、Node.js 24、Git、uv、Docker Desktop 与 NVIDIA CUDA 环境。默认数据目录为 `D:\data\gbrain`；安装、启动脚本及 Compose 使用该目录，迁移位置时须同步调整。
+当前安装脚本面向 Windows、PowerShell 7、Node.js 24、Git、uv 和 Docker Desktop。默认使用 CPU，数据目录为 `D:\data\researchwiki-investment`。有 NVIDIA GPU 时可将 `mineruDevice` 改为 `cuda`，安装脚本会选用 CUDA 依赖与 GPU Compose 配置。
 
 ```powershell
 git clone https://github.com/nnquant/ResearchWiki.git
@@ -39,6 +39,8 @@ pwsh -File scripts/stop.ps1
 ```
 
 默认仅监听本机。数据库密码由 setup 脚本生成，保存在数据目录的 `runtime/compose.env`。本地 `config.json`、数据、密钥、依赖和构建产物不纳入版本管理。IMA 需自行安装对应适配器并配置路径与知识库。
+
+安装、启动、停止脚本通过 `scripts/deployment.ps1` 读取 `config.json` 中的数据目录和端口。默认 Wiki / MCP / PostgreSQL / Ollama 端口分别为 8018 / 3131 / 5436 / 11435；多实例部署应同时区分 `dataRoot`、`deploymentName` 和这些端口。CPU 解析较慢，首次使用需要下载模型。
 
 ## 开发与验证
 
@@ -71,7 +73,7 @@ node scripts/wiki.mjs search "研究问题"
 
 类型及关系契约见 [investment-research.schema.json](config/investment-research.schema.json)，研究字段见 [research-fields.json](config/research-fields.json)。新建对话框可填写字段，后续通过编辑页顶部 YAML 更新；日期为 `YYYY-MM-DD`，证券代码为字符串数组。资料截至日不自动使用创建日期，空值表示尚未确认。日期按服务所在时区判断到期。
 
-已有部署切换到本分支后，需要在选定的数据目录执行 `node scripts/init-brain.mjs` 激活 `investment-research` schema，再执行 `node scripts/wiki.mjs index` 和 `npm run build`，重启服务。初始化会更改该数据实例的活动 schema；Git 分支不隔离数据库和文献数据。需要与 main 并行运行时，应分别配置数据目录、数据库、端口及 Compose / PowerShell 脚本路径。切回 main 的部署应重新运行该分支的初始化与索引命令。
+已有部署切换到本分支后，需要在选定的数据目录执行 `node scripts/init-brain.mjs` 激活 `investment-research` schema，再执行 `node scripts/wiki.mjs index` 和 `npm run build`，重启服务。初始化会更改该数据实例的活动 schema；Git 分支不隔离数据库和文献数据。需要与 main 并行运行时，应使用独立 checkout 并分别配置数据目录、数据库、端口及容器项目名。切回 main 的部署应重新运行该分支的初始化与索引命令。
 
 `seed-wiki.mjs` 仅创建不存在的导航与规范页面，不覆盖已有研究内容；已有量化导航不会自动改写。研究阶段用于组织工作，不等同于投资论点已被验证，也不自动产生评级或交易建议。
 

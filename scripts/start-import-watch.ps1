@@ -1,8 +1,8 @@
 $ErrorActionPreference = 'Stop'
-$repoRoot = Split-Path $PSScriptRoot -Parent
+. "$PSScriptRoot\deployment.ps1"
 $importConfig = (Get-Content -LiteralPath (Join-Path $repoRoot 'config.json') -Raw | ConvertFrom-Json).directoryImport
 if (-not $importConfig.enabled) { Write-Host '目录导入已暂停'; return }
-$watchLock = 'D:\data\gbrain\state\directory-watch.lock'
+$watchLock = "$dataRoot\state\directory-watch.lock"
 if (Test-Path -LiteralPath $watchLock) {
     $owner = Get-Content -LiteralPath $watchLock -Raw | ConvertFrom-Json
     $ownerProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$($owner.pid)" -ErrorAction SilentlyContinue
@@ -14,7 +14,7 @@ if (Test-Path -LiteralPath $watchLock) {
     }
     $parsers = Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains((Join-Path $repoRoot 'scripts\parse_pdf.py')) }
     if ($parsers) { throw '发现仍在运行的 MinerU 子进程，保留锁等待核对' }
-    $ingestLock = 'D:\data\gbrain\state\ingest.lock'
+    $ingestLock = "$dataRoot\state\ingest.lock"
     if (Test-Path -LiteralPath $ingestLock) {
         $ingestOwner = Get-Content -LiteralPath $ingestLock -Raw | ConvertFrom-Json
         if ($ingestOwner.pid -eq $owner.pid) { Remove-Item -LiteralPath $ingestLock }
@@ -22,5 +22,5 @@ if (Test-Path -LiteralPath $watchLock) {
     Remove-Item -LiteralPath $watchLock
 }
 $watchArgs = @(('"' + (Join-Path $repoRoot 'scripts\wiki.mjs') + '"'), 'import-dir', ('"' + $importConfig.path + '"'), '--watch')
-$watchProcess = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList $watchArgs -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput 'D:\data\gbrain\logs\directory-import.stdout.log' -RedirectStandardError 'D:\data\gbrain\logs\directory-import.stderr.log' -PassThru
+$watchProcess = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList $watchArgs -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput "$dataRoot\logs\directory-import.stdout.log" -RedirectStandardError "$dataRoot\logs\directory-import.stderr.log" -PassThru
 Write-Host "目录持续导入已启动，PID $($watchProcess.Id)，MinerU 并行度 $($importConfig.concurrency)"

@@ -7,7 +7,7 @@ if(!exists) {
   const envText=await fs.readFile(dataPath('runtime','compose.env'),'utf8');
   const password=envText.match(/^GBRAIN_PG_PASSWORD=(.+)$/m)?.[1]?.trim();
   if(!password)throw new Error('运行 setup.ps1 初始化本地数据库凭证');
-  const result=await gb(['init','--url',`postgresql://gbrain:${password}@127.0.0.1:5436/gbrain`,
+  const result=await gb(['init','--url',`postgresql://gbrain:${password}@127.0.0.1:${config.postgresPort ?? 5436}/gbrain`,
     '--embedding-model',config.embeddingModel,'--embedding-dimensions',String(config.embeddingDimensions),
     '--skip-embed-check','--non-interactive'],{timeout:600000});
   await fs.writeFile(dataPath('logs','gbrain-init.log'),(result.stdout+'\n'+result.stderr).replaceAll(password,'[REDACTED]'));
