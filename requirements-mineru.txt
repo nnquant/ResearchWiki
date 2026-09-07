@@ -1,0 +1,4 @@
+mineru[pipeline]==3.4.5
+torch==2.10.0+cu128
+torchvision==0.25.0+cu128
+six==1.17.0

@@ -1,0 +1,24 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { dataPath,repo,atomicJson,now } from './common.mjs';
+const token=(await fs.readFile(dataPath('runtime','mcp-read-token'),'utf8')).trim();
+const client=new Client({name:'wiki-acceptance',version:'0.1.0'});
+await client.connect(new StreamableHTTPClientTransport(new URL('http://127.0.0.1:3131/mcp'),{requestInit:{headers:{Authorization:`Bearer ${token}`}}}));
+const tools=await client.listTools();
+const query=tools.tools.find(x=>x.name==='query');assert.ok(query,'query tool available');
+const queryInput=query.inputSchema;console.log('query schema:',JSON.stringify(queryInput));
+const results=await client.callTool({name:'query',arguments:{query:'证据 引用 页码'}});
+assert.ok(!results.isError,'query returns a successful result');
+let denied=false;
+try {const value=await client.callTool({name:'put_page',arguments:{slug:'drafts/should-not-exist',content:'# should not be written'}});denied=Boolean(value.isError)||JSON.stringify(value).includes('scope')||JSON.stringify(value).includes('permission');}catch{denied=true;}
+assert.ok(denied,'read-only token rejects writes');
+await client.close();
+const bridge=new Client({name:'wiki-stdio-acceptance',version:'0.1.0'});
+await bridge.connect(new StdioClientTransport({command:process.execPath,args:[repo+'/scripts/mcp-stdio.mjs'],stderr:'pipe'}));
+const bridgeTools=await bridge.listTools();assert.ok(bridgeTools.tools.some(x=>x.name==='get_page'));
+await bridge.close();
+const report={at:now(),http_tools:tools.tools.map(x=>x.name),query_ok:true,write_denied:denied,stdio_tools:bridgeTools.tools.length};
+await atomicJson(dataPath('state','mcp-acceptance.json'),report);console.log(JSON.stringify(report,null,2));

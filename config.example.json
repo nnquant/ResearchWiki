@@ -1,0 +1,24 @@
+{
+  "dataRoot": "D:/data/gbrain",
+  "host": "127.0.0.1",
+  "port": 8018,
+  "mcpPort": 3131,
+  "imaSkill": "",
+  "imaKnowledgeBase": "",
+  "embeddingModel": "ollama:bge-m3",
+  "embeddingDimensions": 1024,
+  "ollamaUrl": "http://127.0.0.1:11435",
+  "mineruBackend": "pipeline",
+  "mineruDevice": "cuda",
+  "mineruModelSource": "modelscope",
+  "directoryImport": {
+    "enabled": false,
+    "path": "D:/data/gbrain/inbox",
+    "concurrency": 2,
+    "mineruVramGB": 6,
+    "batchSize": 2,
+    "pollSeconds": 60,
+    "stableSeconds": 60,
+    "maxAttempts": 3
+  }
+}

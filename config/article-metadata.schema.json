@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "文献可选信息",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "authors": { "title": "作者", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "institutions": { "title": "机构", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "doi": { "title": "DOI", "type": ["string", "null"], "maxLength": 500 },
+    "arxiv_id": { "title": "arXiv ID", "type": ["string", "null"], "maxLength": 100 },
+    "abstract": { "title": "摘要", "type": ["string", "null"], "maxLength": 20000 },
+    "language": { "title": "语言", "type": ["string", "null"], "maxLength": 100 },
+    "asset_classes": { "title": "资产类别", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "markets": { "title": "市场", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "research_topics": { "title": "研究主题", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "research_question": { "title": "核心问题", "type": ["string", "null"], "maxLength": 10000 },
+    "strategy_frequency": { "title": "策略频率", "type": ["string", "null"], "maxLength": 500 },
+    "sample_start": { "title": "样本开始", "type": ["string", "null"], "format": "date" },
+    "sample_end": { "title": "样本结束", "type": ["string", "null"], "format": "date" },
+    "sample_period": { "title": "样本区间说明", "type": ["string", "null"], "maxLength": 5000 },
+    "methods": { "title": "研究方法", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "key_findings": { "title": "核心结论", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "key_evidence": { "title": "关键证据与页码", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "limitations": { "title": "适用边界", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "reproducible_experiments": { "title": "可复现实验", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "personal_rating": { "title": "个人评分", "type": ["number", "null"], "minimum": 0, "maximum": 5 },
+    "document_type": { "title": "文献分类", "type": ["string", "null"], "maxLength": 100 },
+    "tags": { "title": "标签", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "aliases": { "title": "别名", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "published_at": { "title": "发布日期", "type": ["string", "null"], "format": "date" },
+    "review_status": { "title": "阅读状态", "type": ["string", "null"], "enum": [null, "unread", "unreviewed", "reviewed", "draft", "verified", "rejected"] }
+  }
+}

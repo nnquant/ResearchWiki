@@ -1,0 +1,846 @@
+{
+  "api_version": "gbrain-schema-pack-v1",
+  "name": "quant-research",
+  "version": "1.0.0",
+  "description": "量化研究：原始证据、观点、假设、因子、策略与实验",
+  "extends": "gbrain-base",
+  "page_types": [
+    {
+      "name": "source",
+      "primitive": "media",
+      "path_prefixes": [
+        "sources/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "paper",
+      "primitive": "media",
+      "path_prefixes": [
+        "papers/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "report",
+      "primitive": "media",
+      "path_prefixes": [
+        "reports/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "claim",
+      "primitive": "concept",
+      "path_prefixes": [
+        "claims/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "hypothesis",
+      "primitive": "concept",
+      "path_prefixes": [
+        "hypotheses/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "factor",
+      "primitive": "concept",
+      "path_prefixes": [
+        "factors/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "strategy",
+      "primitive": "concept",
+      "path_prefixes": [
+        "strategies/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "experiment",
+      "primitive": "media",
+      "path_prefixes": [
+        "experiments/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "dataset",
+      "primitive": "media",
+      "path_prefixes": [
+        "datasets/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "security",
+      "primitive": "entity",
+      "path_prefixes": [
+        "securities/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "industry",
+      "primitive": "concept",
+      "path_prefixes": [
+        "industries/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "theme",
+      "primitive": "concept",
+      "path_prefixes": [
+        "themes/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "metric",
+      "primitive": "concept",
+      "path_prefixes": [
+        "metrics/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    },
+    {
+      "name": "institution",
+      "primitive": "entity",
+      "path_prefixes": [
+        "institutions/"
+      ],
+      "extractable": false,
+      "expert_routing": false
+    }
+  ],
+  "link_types": [
+    {
+      "name": "supported_by"
+    },
+    {
+      "name": "contradicted_by"
+    },
+    {
+      "name": "derived_from"
+    },
+    {
+      "name": "tests"
+    },
+    {
+      "name": "uses_dataset"
+    },
+    {
+      "name": "trades"
+    },
+    {
+      "name": "measures"
+    }
+  ],
+  "frontmatter_links": [
+    {
+      "page_type": "source",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "source",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "source",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "source",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "source",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "source",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "source",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "paper",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "paper",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "paper",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "paper",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "paper",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "paper",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "paper",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "report",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "report",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "report",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "report",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "report",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "report",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "report",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "claim",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "claim",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "claim",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "claim",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "claim",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "claim",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "claim",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "hypothesis",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "hypothesis",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "hypothesis",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "hypothesis",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "hypothesis",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "hypothesis",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "hypothesis",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "factor",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "factor",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "factor",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "factor",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "factor",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "factor",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "factor",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "strategy",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "strategy",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "strategy",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "strategy",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "strategy",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "strategy",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "strategy",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "experiment",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "experiment",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "experiment",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "experiment",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "experiment",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "experiment",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "experiment",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "dataset",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "dataset",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "dataset",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "dataset",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "dataset",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "dataset",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "dataset",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "security",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "security",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "security",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "security",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "security",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "security",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "security",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "industry",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "industry",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "industry",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "industry",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "industry",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "industry",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "industry",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "theme",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "theme",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "theme",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "theme",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "theme",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "theme",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "theme",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "metric",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "metric",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "metric",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "metric",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "metric",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "metric",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "metric",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    },
+    {
+      "page_type": "institution",
+      "fields": [
+        "supported_by"
+      ],
+      "link_type": "supported_by"
+    },
+    {
+      "page_type": "institution",
+      "fields": [
+        "contradicted_by"
+      ],
+      "link_type": "contradicted_by"
+    },
+    {
+      "page_type": "institution",
+      "fields": [
+        "derived_from"
+      ],
+      "link_type": "derived_from"
+    },
+    {
+      "page_type": "institution",
+      "fields": [
+        "tests"
+      ],
+      "link_type": "tests"
+    },
+    {
+      "page_type": "institution",
+      "fields": [
+        "uses_dataset"
+      ],
+      "link_type": "uses_dataset"
+    },
+    {
+      "page_type": "institution",
+      "fields": [
+        "trades"
+      ],
+      "link_type": "trades"
+    },
+    {
+      "page_type": "institution",
+      "fields": [
+        "measures"
+      ],
+      "link_type": "measures"
+    }
+  ]
+}

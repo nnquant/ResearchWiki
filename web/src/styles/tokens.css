@@ -1,0 +1,105 @@
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  /* 暖黑：略带棕调的深灰，避免纯中性灰的机械感 */
+  --bg: #131211;
+  --bg-elev: #171614;
+  --surface: #1b1a18;
+  --surface-2: #21201d;
+  --surface-3: #292724;
+  --border: #2a2825;
+  --border-strong: #3a3733;
+  --text: #e8e4dc;
+  --text-2: #b8b3aa;
+  --muted: #86817a;
+  --faint: #5d5953;
+  --accent: #d9a441;
+  --accent-bg: rgba(217, 164, 65, 0.12);
+  --accent-strong: #e8b75a;
+  --accent-ink: #1a1408;
+  --ok: #7fb069;
+  --warn: #d9a441;
+  --danger: #d9705c;
+  --mark: rgba(217, 164, 65, 0.28);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --overlay: rgba(0, 0, 0, 0.6);
+
+  --font-sans: "Noto Sans", "Noto Sans SC", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  --font-mono: "Noto Sans Mono", "Cascadia Mono", Consolas, monospace;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 28px;
+  --lh-body: 1.7;
+  --radius: 3px;
+  --radius-lg: 6px;
+  --radius-nav: 8px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  --sidebar-w: 264px;
+  --rail-w: 288px;
+  --reading-w: 1180px;
+  --topbar-h: 48px;
+
+  --t-source: #8fb3d9;
+  --t-paper: #8fb3d9;
+  --t-report: #6fb5b0;
+  --t-claim: #d9a441;
+  --t-hypothesis: #b39ddb;
+  --t-factor: #7fb069;
+  --t-strategy: #e08a4e;
+  --t-experiment: #d98aa8;
+  --t-dataset: #6faed9;
+  --t-security: #c9a86a;
+  --t-industry: #a3b56b;
+  --t-theme: #c9a0d9;
+  --t-metric: #6ec7b0;
+  --t-institution: #b0a898;
+  --t-concept: #6fb5b0;
+  --t-note: #b39ddb;
+  --t-other: #8a857d;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f4ef;
+  --bg-elev: #fbfaf7;
+  --surface: #ffffff;
+  --surface-2: #f0ede6;
+  --surface-3: #e7e3da;
+  --border: #e2ded5;
+  --border-strong: #cdc7bb;
+  --text: #1f1d1a;
+  --text-2: #45413b;
+  --muted: #6e6960;
+  --faint: #9d978d;
+  --accent: #a8761c;
+  --accent-bg: rgba(168, 118, 28, 0.12);
+  --accent-strong: #8c6114;
+  --accent-ink: #ffffff;
+  --ok: #3f8a3a;
+  --warn: #a8761c;
+  --danger: #b8432f;
+  --mark: rgba(217, 164, 65, 0.35);
+  --shadow: 0 8px 24px rgba(40, 30, 10, 0.12);
+  --overlay: rgba(30, 26, 20, 0.35);
+  --t-source: #2f6fa8;
+  --t-paper: #2f6fa8;
+  --t-report: #1f8a83;
+  --t-claim: #a8761c;
+  --t-hypothesis: #6f4fb8;
+  --t-factor: #3f8a3a;
+  --t-strategy: #c2611c;
+  --t-experiment: #b8477a;
+  --t-dataset: #1f7fb0;
+  --t-concept: #1f8a83;
+  --t-note: #6f4fb8;
+}

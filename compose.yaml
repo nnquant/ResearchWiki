@@ -1,0 +1,31 @@
+name: quant-research-wiki
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gbrain
+      POSTGRES_USER: gbrain
+      POSTGRES_PASSWORD: ${GBRAIN_PG_PASSWORD:?Run scripts/setup.ps1 first}
+    ports: ["127.0.0.1:5436:5432"]
+    volumes: ["D:/data/gbrain/postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gbrain -d gbrain"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  embeddings:
+    image: ollama/ollama:0.17.0
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports: ["127.0.0.1:11435:11434"]
+    volumes: ["D:/data/gbrain/models/ollama:/root/.ollama"]
+    environment:
+      OLLAMA_KEEP_ALIVE: 2h
+      OLLAMA_MAX_LOADED_MODELS: 1

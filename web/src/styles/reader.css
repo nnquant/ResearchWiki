@@ -1,0 +1,291 @@
+/* 阅读页：单栏正文 + 同列内的粘性侧注（方案 A 的内容区布局） */
+.reader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 56px;
+  max-width: var(--reading-w);
+  width: 100%;
+  margin: 0 auto;
+  padding: 40px 40px 120px;
+}
+
+.reader > article {
+  min-width: 0;
+}
+
+.reader-aside {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  font-size: 12.5px;
+  max-height: calc(100vh - var(--topbar-h));
+  overflow: auto;
+  padding-bottom: 40px;
+}
+
+.reader-aside section {
+  margin-bottom: 30px;
+}
+
+.reader-aside h4 {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+.reader-aside .pdf-nav a {
+  border-color: transparent;
+}
+
+.reader-aside .pdf-nav a:hover,
+.reader-aside .pdf-nav a.active {
+  border-color: var(--accent);
+}
+
+.reader-aside .outline li a {
+  border-left-color: var(--border);
+  margin-left: 0;
+  padding-left: calc((var(--depth, 1) - 1) * 10px + 10px);
+}
+
+.reader-aside .outline li a.active {
+  border-left-color: var(--accent);
+}
+
+.eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.eyebrow b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.eyebrow .flag {
+  color: var(--warn);
+}
+
+.reader .page-title {
+  margin: 14px 0 12px;
+}
+
+.reader .meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.reader .meta-line code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.reader .meta-line a {
+  color: var(--muted);
+}
+
+.reader .meta-line a:hover {
+  color: var(--accent);
+}
+
+.reader .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 22px 0 0;
+  padding: 20px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.reader .actions .btn {
+  font-size: 12.5px;
+  padding: 6px 14px;
+  border-radius: var(--radius);
+}
+
+.reader .actions .btn.ghost {
+  border-color: transparent;
+}
+
+.reader-body {
+  margin-top: 8px;
+}
+
+.reader .md {
+  font-size: 15.5px;
+  line-height: 1.8;
+  max-width: none;
+  width: 100%;
+}
+
+.reader .md-preamble .md {
+  color: var(--text-2);
+}
+
+/* 页头已经显示标题，正文开头重复的一级标题不再显示 */
+.reader .md-preamble .md > h1:first-child,
+.reader-body > .md > h1:first-child {
+  display: none;
+}
+
+.pdf-page-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 40px 0 18px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.pdf-page-heading a {
+  color: var(--accent);
+}
+
+.pdf-page-heading::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+
+.pdf-page-heading .count {
+  color: var(--faint);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+  font-family: var(--font-mono);
+}
+
+.aside-rel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aside-rel a {
+  color: var(--text-2);
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.aside-rel a:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.aside-rel a.missing {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.aside-rel small {
+  color: var(--faint);
+  font-size: 11px;
+  flex: none;
+  min-width: 52px;
+}
+
+.aside-rel .title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aside-rel .more {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.reader-aside .kv {
+  grid-template-columns: 76px 1fr;
+}
+
+@media (max-width: 1180px) {
+  .reader {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 32px 28px 120px;
+  }
+  .reader-aside {
+    position: static;
+    max-height: none;
+    border-top: 1px solid var(--border);
+    padding-top: 24px;
+  }
+}
+.article-metadata {
+  margin: 0 0 24px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-nav);
+}
+.article-metadata h2 { font-size: var(--fs-md); margin-bottom: 12px; }
+.article-field { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 12px; margin: 8px 0; }
+.article-field dt { color: var(--muted); font-size: var(--fs-sm); }
+.article-field dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .article-field { grid-template-columns: 1fr; gap: 4px; }
+}
+
+/* 正文、大纲与文献信息分栏。 */
+.reader-three-col {
+  grid-template-columns: minmax(0, 1fr) 220px 300px;
+  max-width: 1760px;
+  gap: 28px;
+  padding-inline: 28px;
+}
+.reader-info {
+  min-width: 0;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: calc(100vh - var(--topbar-h));
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.reader-info .article-field { grid-template-columns: 1fr; gap: 4px; margin: 14px 0; }
+.reader-info .article-field ul { padding-left: 18px; margin: 0; }
+.metadata-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  overflow: hidden;
+}
+.metadata-expand {
+  display: block;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  padding: 6px 0 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+@media (max-width: 1400px) {
+  .reader-three-col { grid-template-columns: minmax(0, 1fr) 280px; }
+  .reader-three-col > article { grid-row: span 2; }
+  .reader-three-col > .reader-aside { grid-column: 2; position: static; max-height: 360px; }
+  .reader-info { grid-column: 2; position: static; max-height: none; }
+}
+@media (max-width: 1000px) {
+  .reader-three-col { grid-template-columns: minmax(0, 1fr); }
+  .reader-three-col > article { grid-row: auto; }
+  .reader-three-col > .reader-aside, .reader-info { grid-column: 1; }
+}

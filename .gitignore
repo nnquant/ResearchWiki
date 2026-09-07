@@ -1,0 +1,18 @@
+node_modules/
+vendor/
+work/
+web/dist/
+.env
+*.log
+__pycache__/
+
+# Local configuration and runtime artifacts
+/config.json
+/data/
+/runtime/
+*.pem
+*.key
+.env.*
+
+/config/mcp.json
+/config/mineru-installed.txt
