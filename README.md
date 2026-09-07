@@ -1,6 +1,8 @@
-# ResearchWiki
+# ResearchWiki · Investment
 
-面向量化研究的本地文献与知识 Wiki。支持 PDF / 网页全文入库、中英文混合检索、研究笔记及证据关系。
+面向主观与基本面投资研究的本地知识 Wiki，以公司研究、行业研究和宏观研究为核心，连接文献、观点、事件、估值与调研纪要。支持 PDF / 网页全文入库、中英文混合检索和证据追溯。
+
+`main` 分支侧重量化研究；`investment` 分支侧重通用投资研究。既有因子、策略和实验页面在本分支仍可读取与编辑。
 
 ## 功能
 
@@ -8,7 +10,9 @@
 - MinerU 解析 PDF，保留原文件、图片、正文和页码映射；Defuddle 提取网页正文。
 - GBrain + PostgreSQL / pgvector + Ollama bge-m3 提供关键词与语义检索。
 - 作者、摘要、方法、结论、证据和适用边界等结构化字段；长字段折叠阅读。
-- 观点、假设、因子、策略、实验与文献之间的可追溯关系。
+- 公司 / 行业 / 宏观研究工作台，事件跟踪、估值分析、调研纪要与投资主题专用模板。
+- 资料截至日、证券代码、市场地区、研究期限、研究阶段和下次复核日期；首页展示到期研究，资料库支持阶段和待复核筛选，并可按代码、别名或地区查找。
+- 研究对象、所属行业 / 主题、影响对象、对比对象，以及支持 / 反驳证据的可追溯关系。
 - 可选目录监听、IMA 导入和 OpenAI 兼容接口字段整理；默认不启用目录监听。
 - MCP 接口与只读 stdio 桥接，支持研究 Agent 查询。
 
@@ -19,6 +23,7 @@
 ```powershell
 git clone https://github.com/nnquant/ResearchWiki.git
 cd ResearchWiki
+git switch investment
 Copy-Item config.example.json config.json
 # 按需编辑 config.json
 pwsh -File scripts/install.ps1
@@ -56,6 +61,19 @@ node scripts/wiki.mjs search "研究问题"
 ```
 
 字段契约见 [article-metadata.schema.json](config/article-metadata.schema.json)，Agent 录入方式见 [agent-ingestion.md](config/agent-ingestion.md)。LLM 字段整理为可选功能，其私有配置放在数据目录 `runtime/article-llm.json`。未知字段应留空，文献入库不代表研究结论已验证。
+
+## 投资研究工作流
+
+1. 从工作台创建公司、行业或宏观研究，按模板记录核心判断、预期差、支持与反方证据、催化剂和证伪条件。
+2. 导入公告、财报、研报、政策文件或网页；用 `derived_from` / `supported_by` / `contradicted_by` 关联证据，并在正文标注页码或章节。
+3. 用 `about` 关联研究对象，`belongs_to` 连接行业或主题，`impacts` 记录事件传导，`compares_with` 连接比较对象。关联目标须为已存在页面。
+4. 填写资料截至日与下次复核日期。研究阶段为待研究、持续跟踪、已复核、已归档；到期且未归档的页面进入待复核列表。完成复核后更新下一次日期或清空，保留正文中的判断演变记录。
+
+类型及关系契约见 [investment-research.schema.json](config/investment-research.schema.json)，研究字段见 [research-fields.json](config/research-fields.json)。新建对话框可填写字段，后续通过编辑页顶部 YAML 更新；日期为 `YYYY-MM-DD`，证券代码为字符串数组。资料截至日不自动使用创建日期，空值表示尚未确认。日期按服务所在时区判断到期。
+
+已有部署切换到本分支后，需要在选定的数据目录执行 `node scripts/init-brain.mjs` 激活 `investment-research` schema，再执行 `node scripts/wiki.mjs index` 和 `npm run build`，重启服务。初始化会更改该数据实例的活动 schema；Git 分支不隔离数据库和文献数据。需要与 main 并行运行时，应分别配置数据目录、数据库、端口及 Compose / PowerShell 脚本路径。切回 main 的部署应重新运行该分支的初始化与索引命令。
+
+`seed-wiki.mjs` 仅创建不存在的导航与规范页面，不覆盖已有研究内容；已有量化导航不会自动改写。研究阶段用于组织工作，不等同于投资论点已被验证，也不自动产生评级或交易建议。
 
 ## 依赖
 

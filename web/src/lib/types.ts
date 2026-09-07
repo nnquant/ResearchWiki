@@ -1,3 +1,5 @@
+import researchSchema from '../../../config/investment-research.schema.json';
+
 export interface TypeMeta {
   label: string;
   dir: string | null;
@@ -6,6 +8,11 @@ export interface TypeMeta {
 }
 
 export const TYPE_META: Record<string, TypeMeta> = {
+  company: { label: '公司研究', dir: 'companies', cssVar: '--t-company', description: '商业模式、财务质量、竞争优势与投资论点' },
+  macro: { label: '宏观研究', dir: 'macro', cssVar: '--t-macro', description: '增长、通胀、政策与资产传导机制' },
+  event: { label: '事件跟踪', dir: 'events', cssVar: '--t-event', description: '公告、政策、业绩与催化剂的持续跟踪' },
+  valuation: { label: '估值分析', dir: 'valuations', cssVar: '--t-valuation', description: '估值假设、可比口径、情景与敏感性' },
+  meeting: { label: '调研纪要', dir: 'meetings', cssVar: '--t-meeting', description: '访谈、业绩会与实地调研记录' },
   source: { label: '文献', dir: 'sources', cssVar: '--t-source', description: '文章全文、图片与原文件；论文、研报等通过分类标签筛选' },
   paper: { label: '论文解读', dir: 'papers', cssVar: '--t-paper', description: '阅读后记录的方法、证据与适用边界' },
   report: { label: '研报解读', dir: 'reports', cssVar: '--t-report', description: '阅读后记录的研报分析' },
@@ -16,18 +23,21 @@ export const TYPE_META: Record<string, TypeMeta> = {
   experiment: { label: '实验', dir: 'experiments', cssVar: '--t-experiment', description: '一次具体检验的设置与结果' },
   dataset: { label: '数据集', dir: 'datasets', cssVar: '--t-dataset', description: '数据来源、字段与缺陷' },
   security: { label: '证券', dir: 'securities', cssVar: '--t-security', description: '单个证券' },
-  industry: { label: '行业', dir: 'industries', cssVar: '--t-industry', description: '行业' },
-  theme: { label: '主题', dir: 'themes', cssVar: '--t-theme', description: '投资主题' },
+  industry: { label: '行业研究', dir: 'industries', cssVar: '--t-industry', description: '供需、产业链、竞争格局与周期跟踪' },
+  theme: { label: '投资主题', dir: 'themes', cssVar: '--t-theme', description: '跨行业驱动、受益路径与主题兑现条件' },
   metric: { label: '指标', dir: 'metrics', cssVar: '--t-metric', description: '指标定义' },
   institution: { label: '机构', dir: 'institutions', cssVar: '--t-institution', description: '机构' },
   concept: { label: '概念', dir: 'concepts', cssVar: '--t-concept', description: '研究规范与方法论' },
   note: { label: '笔记', dir: 'notes', cssVar: '--t-note', description: '自由笔记' },
 };
 
-/** Full-text literature is the primary reading entry. */
+export const CORE_TYPES = ['company', 'industry', 'macro'];
+export const RESEARCH_TYPES = [...CORE_TYPES, 'theme', 'claim', 'event', 'valuation', 'meeting'];
+
+/** Fundamental research first; historical quant pages remain accessible. */
 export const TYPE_ORDER = [
-  'source', 'note', 'paper', 'report', 'claim', 'hypothesis', 'factor', 'strategy', 'experiment', 'dataset',
-  'concept', 'security', 'industry', 'theme', 'metric', 'institution',
+  ...RESEARCH_TYPES, 'source', 'report', 'note', 'security', 'metric', 'institution', 'dataset', 'concept',
+  'paper', 'hypothesis', 'factor', 'strategy', 'experiment',
 ];
 
 export function typeLabel(type: string | null | undefined): string {
@@ -41,6 +51,7 @@ export function typeColor(type: string | null | undefined): string {
 }
 
 export const RELATION_LABELS: Record<string, string> = {
+  about: '研究对象', belongs_to: '所属行业 / 主题', impacts: '影响对象', compares_with: '对比对象',
   supported_by: '支持证据',
   contradicted_by: '反驳证据',
   derived_from: '来源',
@@ -53,6 +64,7 @@ export const RELATION_LABELS: Record<string, string> = {
 
 /** Inverse phrasing for incoming relations: "X derived_from me" → "派生页面". */
 export const RELATION_INCOMING_LABELS: Record<string, string> = {
+  about: '相关研究', belongs_to: '所属成员', impacts: '影响来源', compares_with: '被比较于',
   supported_by: '支持的观点',
   contradicted_by: '反驳的观点',
   derived_from: '派生页面',
@@ -63,7 +75,7 @@ export const RELATION_INCOMING_LABELS: Record<string, string> = {
   mentions: '反向链接',
 };
 
-export const RELATION_FIELDS = ['supported_by', 'contradicted_by', 'derived_from', 'tests', 'uses_dataset', 'trades', 'measures'];
+export const RELATION_FIELDS = researchSchema.link_types.map(t => t.name);
 
 export const STATUS_LABELS: Record<string, string> = {
   unread: '未读',

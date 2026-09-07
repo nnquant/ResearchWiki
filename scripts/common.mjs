@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
+import { researchSchema } from './research-schema.mjs';
 
 export const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const config = JSON.parse(await fs.readFile(path.join(repo, 'config.json'), 'utf8'));
@@ -33,6 +34,7 @@ export async function readJson(file, fallback) {
 export const manifestPath = dataPath('state', 'manifest.json');
 export const manifest = () => readJson(manifestPath, {version: 1, documents: {}});
 export async function ensureDirs() {
+  for (const type of researchSchema.page_types) await fs.mkdir(dataPath('wiki', type.path_prefixes[0]), { recursive: true });
   for (const d of ['raw','parsed','wiki/sources','wiki/concepts','wiki/claims','wiki/hypotheses','wiki/factors','wiki/strategies','wiki/experiments','wiki/datasets','inbox','state','logs','backups','models','cache','runtime']) {
     await fs.mkdir(dataPath(d), {recursive:true});
   }

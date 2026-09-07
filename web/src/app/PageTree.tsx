@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { NavLink, Link, useLocation } from 'react-router';
 import { useIndex } from '../api/hooks';
 import { pageUrl } from '../api/client';
-import { TYPE_META, TYPE_ORDER, typeColor, typeLabel } from '../lib/types';
+import { TYPE_META, TYPE_ORDER, CORE_TYPES, typeColor, typeLabel } from '../lib/types';
 import type { IndexEntry } from '../api/types';
 
 const SHOW = 8;
@@ -27,7 +27,7 @@ export function PageTree() {
     }
     const order = [...TYPE_ORDER, ...[...map.keys()].filter(t => !TYPE_ORDER.includes(t))];
     return order
-      .filter(type => map.has(type) || type === 'source')
+      .filter(type => map.has(type) || CORE_TYPES.includes(type) || type === 'source')
       .map(type => ({
         type,
         items: (map.get(type) ?? []).sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))),

@@ -9,7 +9,7 @@ const TYPES = {
   '.ttf': 'font/ttf', '.json': 'application/json; charset=utf-8', '.map': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
 };
 
-const MISSING_BUILD = `<!doctype html><meta charset="utf-8"><title>量化研究 Wiki</title>
+const MISSING_BUILD = `<!doctype html><meta charset="utf-8"><title>投资研究 Wiki</title>
 <body style="font-family:system-ui;background:#111214;color:#e6e6e6;padding:48px;line-height:1.7">
 <h1 style="font-weight:600;font-size:20px">前端尚未构建</h1>
 <p>请在项目目录运行 <code style="background:#1a1c1f;padding:2px 6px;border-radius:4px">npm run build</code>，然后刷新此页面。</p>

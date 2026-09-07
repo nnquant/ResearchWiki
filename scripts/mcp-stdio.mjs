@@ -6,9 +6,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { ListToolsRequestSchema,CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { config,dataPath } from './common.mjs';
 const token=(await fs.readFile(dataPath('runtime','mcp-read-token'),'utf8')).trim();
-const client=new Client({name:'quant-wiki-reader',version:'0.1.0'});
+const client=new Client({name:'investment-wiki-reader',version:'0.1.0'});
 await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${config.mcpPort}/mcp`),{requestInit:{headers:{Authorization:`Bearer ${token}`}}}));
-const server=new Server({name:'quant-research-wiki',version:'0.1.0'},{capabilities:{tools:{}}});
+const server=new Server({name:'investment-research-wiki',version:'0.1.0'},{capabilities:{tools:{}}});
 server.setRequestHandler(ListToolsRequestSchema,async()=>client.listTools());
 server.setRequestHandler(CallToolRequestSchema,async request=>client.callTool(request.params));
 await server.connect(new StdioServerTransport());

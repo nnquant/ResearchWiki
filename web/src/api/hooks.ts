@@ -182,7 +182,7 @@ export function useSavePage() {
 export function useCreatePage() {
   const invalidate = useInvalidateContent();
   return useMutation({
-    mutationFn: (input: { type: string; title: string; slug?: string; tags?: string[]; relations?: Record<string, string[]> }) =>
+    mutationFn: (input: { type: string; title: string; slug?: string; tags?: string[]; relations?: Record<string, string[]>; research?: Record<string, string | string[] | null> }) =>
       api<{ slug: string; hash: string; job_id: string }>('/api/pages', { method: 'POST', body: input }),
     onSuccess: () => invalidate(),
   });

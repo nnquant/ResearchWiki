@@ -1,22 +1,17 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { repo } from '../common.mjs';
+import { researchSchema as schema } from '../research-schema.mjs';
 
-const schema = JSON.parse(await fs.readFile(path.join(repo, 'config', 'quant-research.schema.json'), 'utf8'));
-
-/** type → directory (without trailing slash). Includes the two non-schema types this wiki uses. */
+/** type → directory (without trailing slash), shared with initialization and ingestion. */
 export const TYPE_DIRS = Object.fromEntries(schema.page_types.map(t => [t.name, t.path_prefixes[0].replace(/\/$/, '')]));
-TYPE_DIRS.concept = 'concepts';
-TYPE_DIRS.note = 'notes';
 
 export const DIR_TYPES = Object.fromEntries(Object.entries(TYPE_DIRS).map(([type, dir]) => [dir, type]));
 export const PAGE_TYPES = Object.keys(TYPE_DIRS);
 export const RELATION_FIELDS = schema.link_types.map(t => t.name);
 
 export const TYPE_LABELS = {
+  company: '公司研究', macro: '宏观研究', event: '事件跟踪', valuation: '估值分析', meeting: '调研纪要',
   source: '文献', paper: '论文解读', report: '研报解读', claim: '观点', hypothesis: '假设',
   factor: '因子', strategy: '策略', experiment: '实验', dataset: '数据集', security: '证券',
-  industry: '行业', theme: '主题', metric: '指标', institution: '机构', concept: '概念', note: '笔记',
+  industry: '行业研究', theme: '投资主题', metric: '指标', institution: '机构', concept: '概念', note: '笔记',
 };
 
 const WORD = '\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}\\p{N}';

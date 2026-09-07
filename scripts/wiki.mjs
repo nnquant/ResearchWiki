@@ -34,7 +34,7 @@ try {
     case 'search':{const r=await gb(['query',rest.join(' '),'--json']);process.stdout.write(r.stdout);break;}
     case 'status':{const m=await manifest();result={documents:Object.values(m.documents).map(x=>({title:x.title,status:x.status,pages:x.pages,characters:x.characters,parser:x.parser})),dataRoot:dataPath()};break;}
     case 'gbrain':{const r=await gb(rest,{timeout:3600000});process.stdout.write(r.stdout);process.stderr.write(r.stderr);break;}
-    default: console.log('量化研究 Wiki\n  node scripts/wiki.mjs serve\n  node scripts/wiki.mjs add-file <PDF|HTML|MD> [--source-url URL]\n  node scripts/wiki.mjs add-url <URL>\n  node scripts/wiki.mjs ima-list\n  node scripts/wiki.mjs ima-import --kb "知识库名称" --limit 3 [--capture-only]\n  node scripts/wiki.mjs parse-pending\n  node scripts/wiki.mjs index\n  node scripts/wiki.mjs search "研究问题"\n  node scripts/wiki.mjs status\n  node scripts/wiki.mjs gbrain <GBrain 参数>');
+    default: console.log('投资研究 Wiki\n  node scripts/wiki.mjs serve\n  node scripts/wiki.mjs add-file <PDF|HTML|MD> [--source-url URL]\n  node scripts/wiki.mjs add-url <URL>\n  node scripts/wiki.mjs ima-list\n  node scripts/wiki.mjs ima-import --kb "知识库名称" --limit 3 [--capture-only]\n  node scripts/wiki.mjs parse-pending\n  node scripts/wiki.mjs index\n  node scripts/wiki.mjs search "研究问题"\n  node scripts/wiki.mjs status\n  node scripts/wiki.mjs gbrain <GBrain 参数>');
   }
   if(result)console.log(JSON.stringify(result,null,2));
   if(Array.isArray(result)&&result.some(x=>x.status==='failed'))process.exitCode=1;

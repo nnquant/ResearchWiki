@@ -1,4 +1,22 @@
-# Agent 录入文献
+# Agent 录入文献与投资研究
+
+本分支面向公司、行业与宏观研究。文献字段保留原文事实；主观判断单独创建研究页面。
+
+研究页面通过 POST `/api/pages` 创建，例如：
+
+```json
+{
+  "type": "company",
+  "title": "示例公司研究",
+  "tags": ["消费"],
+  "research": { "research_stage": "draft", "as_of": null, "next_review": null, "region": "中国", "tickers": [], "horizon": "未来 12 个月" },
+  "relations": {}
+}
+```
+
+类型支持 company / industry / macro / event / valuation / meeting / theme / claim 等。`research` 字段契约见 `config/research-fields.json`，日期和阶段校验失败返回 422；空值不自动推断。研究阶段不代表事实核验结果。创建返回 201 和 `job_id`，读取 `/api/page/<slug>/raw` 后用 PUT `/api/page/<slug>` 提交完整 `content` 与 `base_hash` 更新；索引任务须完成后再验证检索与关联图。
+
+`about` 指向研究对象，`belongs_to` 指向行业或主题，`impacts` 指向受影响对象，`compares_with` 指向比较对象；证据使用 `derived_from` / `supported_by` / `contradicted_by`。relations 的值为已存在页面 slug 的数组。资料库支持 `stage=tracking`、`due=true` 以及按标题、代码、别名、地区的 `q` 筛选。
 
 字段契约：`config/article-metadata.schema.json`（也可 GET `/api/article-schema`）。字段全部可选；未知值用 null，空字符串和空数组会归一化为空。只有有值的扩展字段显示在文献详情页。
 

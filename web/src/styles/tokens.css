@@ -50,6 +50,11 @@
   --topbar-h: 48px;
 
   --t-source: #8fb3d9;
+  --t-company: #d9a441;
+  --t-macro: #8fb3d9;
+  --t-event: #e08a4e;
+  --t-valuation: #6ec7b0;
+  --t-meeting: #b39ddb;
   --t-paper: #8fb3d9;
   --t-report: #6fb5b0;
   --t-claim: #d9a441;
@@ -92,6 +97,12 @@
   --shadow: 0 8px 24px rgba(40, 30, 10, 0.12);
   --overlay: rgba(30, 26, 20, 0.35);
   --t-source: #2f6fa8;
+  --t-company: #a8761c;
+  --t-macro: #2f6fa8;
+  --t-event: #b05a1c;
+  --t-valuation: #1f8a83;
+  --t-meeting: #6f4fb8;
+  --t-industry: #607a2e;
   --t-paper: #2f6fa8;
   --t-report: #1f8a83;
   --t-claim: #a8761c;

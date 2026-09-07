@@ -1,4 +1,7 @@
+import type { ResearchMetadata } from '../lib/research';
+
 export interface IndexEntry {
+  research: ResearchMetadata;
   slug: string;
   title: string;
   type: string;
@@ -58,6 +61,7 @@ export interface Provenance {
 }
 
 export interface Page {
+  research: ResearchMetadata;
   slug: string;
   title: string;
   type: string;
@@ -127,6 +131,7 @@ export interface SearchResponse {
 }
 
 export interface PageListItem {
+  research: ResearchMetadata;
   slug: string;
   title: string;
   type: string;
@@ -228,6 +233,8 @@ export interface Template {
 }
 
 export interface HomeData {
+  due: IndexEntry[];
+  due_total: number;
   total: number;
   recent: IndexEntry[];
   unread: IndexEntry[];

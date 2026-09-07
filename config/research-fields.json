@@ -1,0 +1,8 @@
+{
+  "as_of": { "label": "资料截至日", "kind": "date" },
+  "next_review": { "label": "下次复核", "kind": "date" },
+  "research_stage": { "label": "研究阶段", "kind": "select", "options": { "draft": "待研究", "tracking": "持续跟踪", "reviewed": "已复核", "archived": "已归档" } },
+  "region": { "label": "市场 / 地区", "kind": "text" },
+  "tickers": { "label": "证券代码", "kind": "list" },
+  "horizon": { "label": "研究期限", "kind": "text" }
+}

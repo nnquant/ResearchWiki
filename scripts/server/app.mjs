@@ -67,6 +67,6 @@ export function createApp() {
 
 export function listen() {
   const server = createApp();
-  server.listen(config.port, config.host, () => console.log(`量化研究 Wiki: http://${config.host}:${config.port}`));
+  server.listen(config.port, config.host, () => console.log(`投资研究 Wiki: http://${config.host}:${config.port}`));
   return server;
 }

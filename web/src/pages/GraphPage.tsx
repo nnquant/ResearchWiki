@@ -5,7 +5,7 @@ import { pageUrl, graphUrl } from '../api/client';
 import { useCrumbs } from '../app/UiContext';
 import { ForceGraph } from '../graph/ForceGraph';
 import { Loading, ErrorBlock, TypeBadge } from '../app/ui';
-import { RELATION_LABELS, typeColor, typeLabel } from '../lib/types';
+import { RELATION_LABELS, RELATION_FIELDS, typeColor, typeLabel } from '../lib/types';
 import type { GraphNode } from '../api/types';
 
 export function GraphPage() {
@@ -47,7 +47,7 @@ export function GraphPage() {
           <button className={`btn sm ${depth === 2 ? 'active' : ''}`} onClick={() => update({ depth: '2' })}>2 跳</button>
         </div>
         <span className="faint">关系：</span>
-        {['supported_by', 'contradicted_by', 'derived_from', 'tests', 'uses_dataset', 'trades', 'measures', 'mentions'].map(t => (
+        {[...RELATION_FIELDS, 'mentions'].map(t => (
           <button key={t} className={`chip chip-button ${linkTypes.includes(t) ? 'active' : ''} ${presentLinkTypes.includes(t) || linkTypes.includes(t) ? '' : 'faint'}`} onClick={() => toggleLinkType(t)} title={linkTypes.length ? '点击切换筛选' : '默认显示全部关系；点击只保留所选'}>
             {RELATION_LABELS[t] ?? t}
           </button>

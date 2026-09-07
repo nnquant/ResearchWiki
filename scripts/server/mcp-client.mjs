@@ -8,7 +8,7 @@ let clientPromise = null;
 
 async function connect() {
   const token = (await fs.readFile(dataPath('runtime', 'mcp-read-token'), 'utf8')).trim();
-  const client = new Client({ name: 'quant-wiki-web', version: '0.2.0' });
+  const client = new Client({ name: 'investment-wiki-web', version: '0.2.0' });
   const transport = new StreamableHTTPClientTransport(new URL(mcpUrl), {
     requestInit: { headers: { Authorization: `Bearer ${token}` } },
   });

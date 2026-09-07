@@ -46,7 +46,7 @@ export function CommandPalette() {
   const items = useMemo<Item[]>(() => {
     const q = query.trim();
     const actions: Item[] = [
-      { id: 'a:new', section: '操作', title: '新建页面…', sub: '按类型模板创建 观点 / 假设 / 因子 / 策略', run: () => { closePalette(); openNewPage(); } },
+      { id: 'a:new', section: '操作', title: '新建页面…', sub: '公司 / 行业 / 宏观 / 事件 / 估值 / 调研纪要', run: () => { closePalette(); openNewPage(); } },
       { id: 'a:import', section: '操作', title: '导入资料', sub: '文件、网页链接、IMA 知识库', run: () => go('/import') },
       { id: 'a:library', section: '操作', title: '打开资料库', run: () => go('/library') },
       { id: 'a:reindex', section: '操作', title: '更新检索索引', run: () => { closePalette(); reindex.mutate(undefined, { onSuccess: () => toast('已加入索引任务'), onError: e => toast(e.message, 'error') }); } },

@@ -3,6 +3,7 @@ import type { Diagnostic } from '@codemirror/lint';
 import type { IndexEntry } from '../api/types';
 import { RELATION_FIELDS, TYPE_META } from '../lib/types';
 import { normalizeSlug, slugDir } from '../lib/slug';
+import { RESEARCH_FIELDS, researchError } from '../lib/research';
 
 const PAGE_TYPES = Object.keys(TYPE_META);
 
@@ -57,6 +58,13 @@ export function lintPage(text: string, slug: string, index: IndexEntry[]): LintR
     if (value !== undefined && !(Array.isArray(value) && value.every(v => typeof v === 'string'))) {
       const [from, to] = fieldRange(field);
       diagnostics.push({ from, to, severity: 'error', message: `${field} 必须是字符串数组` });
+    }
+  }
+  for (const field of Object.keys(RESEARCH_FIELDS)) {
+    const message = researchError(field, frontmatter[field]);
+    if (message) {
+      const [from, to] = fieldRange(field);
+      diagnostics.push({ from, to, severity: 'error', message });
     }
   }
   for (const field of RELATION_FIELDS) {

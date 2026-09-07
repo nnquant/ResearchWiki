@@ -5,6 +5,7 @@ import { readPage, scanWiki, splitFrontmatter, countPdfPages } from './wiki-file
 import { normalizeSlug, editability, RELATION_FIELDS, relationTarget, typeForSlug, TYPE_LABELS, PAGE_TYPES, dirForType } from './slugs.mjs';
 import { HttpError } from './errors.mjs';
 import { articleMetadataOf } from '../article-metadata.mjs';
+import { researchMetadata, isReviewDue } from '../research-schema.mjs';
 
 let lastDbError = null;
 export function dbError() { return lastDbError; }
@@ -35,6 +36,7 @@ async function pageMeta(entry) {
     tags: Array.isArray(frontmatter.tags) ? frontmatter.tags.map(String) : [],
     aliases: Array.isArray(frontmatter.aliases) ? frontmatter.aliases.map(String) : [],
     review_status: typeof frontmatter.review_status === 'string' ? frontmatter.review_status : null,
+    research: researchMetadata(frontmatter),
     excerpt: excerptOf(body, frontmatter.abstract),
     updated_at: new Date(entry.mtime).toISOString(),
   };
@@ -71,6 +73,7 @@ export async function getIndex() {
         review_status: row.review_status ?? null,
         tags: row.tags ?? [],
         aliases: Array.isArray(row.aliases) ? row.aliases.map(String) : [],
+        research: (await pageMeta(entry)).research,
         updated_at: row.updated_at,
         created_at: row.created_at,
         backlinks: row.backlinks,
@@ -94,9 +97,11 @@ export function filterPageIndex(index, filters) {
   if (filters.type?.length) items = items.filter(x => filters.type.includes(x.type));
   if (filters.tag) items = items.filter(x => x.tags.includes(filters.tag));
   if (filters.status) items = items.filter(x => x.review_status === filters.status);
+  if (filters.stage) items = items.filter(x => x.research?.research_stage === filters.stage);
+  if (filters.due) items = items.filter(x => isReviewDue(x));
   if (filters.q) {
     const q = filters.q.toLowerCase();
-    items = items.filter(x => (x.title + ' ' + x.slug).toLowerCase().includes(q));
+    items = items.filter(x => [x.title, x.slug, ...(x.aliases ?? []), ...(x.research?.tickers ?? []), x.research?.region ?? ''].join(' ').toLowerCase().includes(q));
   }
   const key = { updated: 'updated_at', created: 'created_at', title: 'title', type: 'type', slug: 'slug' }[filters.sort] ?? 'updated_at';
   const direction = filters.dir === 'asc' ? 1 : -1;
@@ -201,6 +206,7 @@ export async function getPage(slugInput) {
     type,
     type_label: TYPE_LABELS[type] ?? type,
     frontmatter: fm,
+    research: researchMetadata(fm),
     article_metadata: type === 'source' ? articleMetadataOf(fm) : null,
     frontmatter_error: page.frontmatterError,
     markdown: page.body,
@@ -301,5 +307,6 @@ export async function homeData() {
   const recent = [...index].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, 8);
   const unread = index.filter(x => ['unread', 'unreviewed'].includes(x.review_status ?? '')).slice(0, 8);
   const unindexed = index.filter(x => !x.indexed || x.stale).length;
-  return { total: index.length, recent, unread, unindexed, types: await typesWithCounts() };
+  const due = index.filter(x => isReviewDue(x)).sort((a, b) => a.research.next_review.localeCompare(b.research.next_review) || a.slug.localeCompare(b.slug));
+  return { total: index.length, recent, unread, unindexed, due: due.slice(0, 8), due_total: due.length, types: await typesWithCounts() };
 }

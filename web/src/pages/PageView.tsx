@@ -7,6 +7,7 @@ import { Loading, ErrorBlock } from '../app/ui';
 import { Markdown } from '../reader/Markdown';
 import { ReaderAside } from '../reader/ReaderAside';
 import { ArticleMetadata } from '../reader/ArticleMetadata';
+import { ResearchMetadata } from '../reader/ResearchMetadata';
 import { splitPdfPages, pdfPageId, sectionPrefix } from '../lib/outline';
 import { typeColor, typeLabel, STATUS_LABELS } from '../lib/types';
 import { relativeTime, formatDate } from '../lib/format';
@@ -168,6 +169,7 @@ export function PageView() {
           </div>
         </header>
 
+        {page.research && <ResearchMetadata fields={page.research} />}
         {page.frontmatter_error && <div className="notice warn frontmatter-error">frontmatter 解析失败：{page.frontmatter_error}</div>}
         {page.type === 'source' && page.relations.in.derived_from?.some(ref => ['note', 'paper', 'report'].includes(ref.type)) && (
           <section className="notice" style={{ marginBottom: 20 }}>

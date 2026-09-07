@@ -3,6 +3,7 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import { repo } from '../common.mjs';
 import { PAGE_TYPES, TYPE_LABELS, dirForType } from './slugs.mjs';
+import { researchFields, localToday } from '../research-schema.mjs';
 
 const templatesDir = path.join(repo, 'config', 'templates');
 let cache = null;
@@ -38,11 +39,13 @@ export async function listTemplates() {
 }
 
 /** Render a new page's full markdown (frontmatter + body) for a type. */
-export async function renderTemplate(type, { title, slug, tags = [], relations = {} }) {
+export async function renderTemplate(type, { title, slug, tags = [], relations = {}, research = {} }) {
   const templates = await loadTemplates();
   const tpl = templates.get(type) ?? templates.get('_default');
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const data = { title, type, status: 'draft', created: today };
+  if (tpl?.meta.research) Object.assign(data, { research_stage: 'draft', as_of: null, next_review: null, region: null, tickers: [], horizon: null });
+  for (const field of Object.keys(researchFields)) if (Object.hasOwn(research, field)) data[field] = research[field];
   if (tags.length) data.tags = tags;
   for (const [field, targets] of Object.entries(relations)) {
     if (Array.isArray(targets) && targets.length) data[field] = targets;

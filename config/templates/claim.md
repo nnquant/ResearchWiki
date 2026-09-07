@@ -1,13 +1,19 @@
 ---
 label: 观点
-description: 一条可被证据支持或反驳的具体论断，标注来源页码与适用边界
-fields: [supported_by, contradicted_by, derived_from]
+description: 投资论点、预期差、支持与反方证据
+research: true
+fields: [derived_from, about, supported_by, contradicted_by, impacts]
 ---
 # {{title}}
 
 ## 论断
 
-一句话写清楚论断本身：在什么市场、什么样本期、什么条件下成立。
+一句话写清楚研究对象、判断、适用条件与期限，区分事实与研究推断。
+
+## 市场共识与预期差
+
+- 共识的来源和截至时间：
+- 我们的不同判断与依据：
 
 ## 支持证据
 
@@ -18,8 +24,13 @@ fields: [supported_by, contradicted_by, derived_from]
 ## 适用边界
 
 - 市场 / 资产：
-- 样本期：
+- 判断期限：
 - 依赖假设：
+
+## 催化剂与证伪条件
+
+- 预计兑现时间与观察指标：
+- 什么证据会让我们改变观点：
 
 ## 研究记录
 

@@ -65,7 +65,8 @@ export function registerEditRoutes(router) {
       if (!Array.isArray(raw) || !raw.length) continue;
       relations[field] = raw.map(v => relationTarget(v)).filter(Boolean);
     }
-    const content = await renderTemplate(type, { title, slug, tags, relations });
+    if (body.research != null && (typeof body.research !== 'object' || Array.isArray(body.research))) throw new HttpError(422, 'research 必须是对象');
+    const content = await renderTemplate(type, { title, slug, tags, relations, research: body.research ?? {} });
     const validation = await validatePageText(content, { slug });
     if (!validation.ok) throw new HttpError(422, '页面内容未通过校验', { errors: validation.errors });
     const written = await writePage(slug, content, { create: true });

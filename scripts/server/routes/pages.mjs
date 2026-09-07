@@ -23,6 +23,8 @@ export function registerPageRoutes(router) {
       type,
       tag: url.searchParams.get('tag') || null,
       status: url.searchParams.get('status') || null,
+      stage: url.searchParams.get('stage') || null,
+      due: url.searchParams.get('due') === 'true',
       q: (url.searchParams.get('q') ?? '').trim().slice(0, 200) || null,
       sort: url.searchParams.get('sort') || 'updated',
       dir: url.searchParams.get('dir') === 'asc' ? 'asc' : 'desc',

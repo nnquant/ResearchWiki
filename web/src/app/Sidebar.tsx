@@ -4,7 +4,7 @@ import { useStatus } from '../api/hooks';
 import { PageTree } from './PageTree';
 
 const NAV = [
-  { to: '/', label: '首页', end: true },
+  { to: '/', label: '研究工作台', end: true },
   { to: '/library', label: '资料库' },
   { to: '/search', label: '检索' },
   { to: '/import', label: '导入' },
@@ -19,6 +19,7 @@ export function Sidebar() {
     <aside className="sidebar">
       <Link to="/" className="brand">
         <span>ResearchWiki</span>
+        <small className="brand-edition">INVESTMENT</small>
       </Link>
       <button className="sidebar-search" onClick={() => openPalette()}>
         <span>搜索页面或内容…</span>

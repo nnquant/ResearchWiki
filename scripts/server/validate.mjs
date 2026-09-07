@@ -1,5 +1,6 @@
 import { splitFrontmatter, scanWiki } from './wiki-files.mjs';
 import { PAGE_TYPES, RELATION_FIELDS, typeForSlug, dirForSlug, relationTarget } from './slugs.mjs';
+import { researchErrors } from '../research-schema.mjs';
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -33,6 +34,14 @@ export async function validatePageText(text, { slug }) {
     }
   }
   const files = await scanWiki();
+  errors.push(...researchErrors(frontmatter));
+  // gray-matter's YAML parser turns unquoted dates into Date objects and may
+  // normalize impossible dates. Validate the original scalar before accepting it.
+  const yaml = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1] ?? '';
+  for (const match of yaml.matchAll(/^(as_of|next_review):[ \t]*(\d[^\r\n]*)/gm)) {
+    const raw = match[2].replace(/\s+#.*$/, '').trim();
+    errors.push(...researchErrors({ [match[1]]: raw }));
+  }
   for (const field of RELATION_FIELDS) {
     const raw = frontmatter[field];
     if (raw === undefined || raw === null) continue;

@@ -24,7 +24,7 @@ export function registerStatusRoutes(router) {
     const files = await scanWiki();
     const indexState = await readJson(dataPath('state', 'index-state.json'), {});
     return {
-      name: '量化研究 Wiki',
+      name: '投资研究 Wiki',
       version: '0.2.0',
       dataRoot: root,
       csrf: csrfToken,

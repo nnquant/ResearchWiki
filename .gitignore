@@ -1,4 +1,5 @@
 node_modules/
+.npm-cache/
 vendor/
 work/
 web/dist/

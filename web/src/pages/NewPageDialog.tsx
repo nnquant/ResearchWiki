@@ -4,7 +4,8 @@ import { useTemplates, useIndex, useCreatePage } from '../api/hooks';
 import { ApiError, editUrl } from '../api/client';
 import { useUi } from '../app/UiContext';
 import { Dialog, TypeDot } from '../app/ui';
-import { TYPE_ORDER, TYPE_META, RELATION_LABELS } from '../lib/types';
+import { TYPE_ORDER, TYPE_META, RELATION_LABELS, RESEARCH_TYPES } from '../lib/types';
+import { RESEARCH_FIELDS, researchError, type ResearchMetadata } from '../lib/research';
 import { normalizeSegment, normalizeSlug } from '../lib/slug';
 
 export function NewPageDialog() {
@@ -14,7 +15,9 @@ export function NewPageDialog() {
   const { data: index } = useIndex();
   const create = useCreatePage();
 
-  const [type, setType] = useState(newPage.type ?? 'claim');
+  const [type, setType] = useState(newPage.type ?? 'company');
+  const [research, setResearch] = useState<ResearchMetadata>({ research_stage: 'draft' });
+  const [tickers, setTickers] = useState('');
   const [title, setTitle] = useState('');
   const [slugTail, setSlugTail] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
@@ -22,6 +25,7 @@ export function NewPageDialog() {
   const [relationField, setRelationField] = useState<string>('derived_from');
   const [relationTarget, setRelationTarget] = useState(newPage.derivedFrom ?? '');
   const [error, setError] = useState<string | null>(null);
+  const updateResearch = (key: string, value: string) => setResearch(previous => ({ ...previous, [key]: value || null }));
 
   useEffect(() => { if (!slugTouched) setSlugTail(normalizeSegment(title)); }, [title, slugTouched]);
 
@@ -31,6 +35,9 @@ export function NewPageDialog() {
   const exists = useMemo(() => index?.some(i => i.slug === slug) ?? false, [index, slug]);
   const ordered = useMemo(() => (templates ?? []).slice().sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type)), [templates]);
   const relationOptions = template?.fields?.length ? template.fields : ['derived_from', 'supported_by', 'contradicted_by'];
+  useEffect(() => {
+    if (!relationOptions.includes(relationField)) setRelationField(relationOptions[0]);
+  }, [relationOptions, relationField]);
   const targetEntry = useMemo(() => {
     if (!relationTarget) return null;
     const norm = normalizeSlug(relationTarget);
@@ -44,6 +51,13 @@ export function NewPageDialog() {
     if (!normalizeSlug(slugTail)) { setError('slug 不能为空'); return; }
     if (exists) { setError('该 slug 已存在'); return; }
     if (relationTarget && !targetEntry) { setError('关联目标必须是已存在的页面'); return; }
+    const researchValues = { ...research, tickers: tickers.split(/[,，]/).map(s => s.trim()).filter(Boolean) };
+    if (RESEARCH_TYPES.includes(type)) {
+      for (const [field, value] of Object.entries(researchValues)) {
+        const message = researchError(field, value);
+        if (message) { setError(message); return; }
+      }
+    }
     try {
       const result = await create.mutateAsync({
         type,
@@ -51,6 +65,7 @@ export function NewPageDialog() {
         slug,
         tags: tags.split(/[,，\s]+/).map(t => t.trim()).filter(Boolean),
         relations: targetEntry ? { [relationField]: [targetEntry.slug] } : {},
+        research: RESEARCH_TYPES.includes(type) ? researchValues : {},
       });
       toast('页面已创建');
       closeNewPage();
@@ -70,9 +85,10 @@ export function NewPageDialog() {
             </button>
           ))}
         </div>
+        {template?.description && <p className="muted small" style={{ marginBottom: 16 }}>{template.description}</p>}
         <div className="field">
           <label>标题</label>
-          <input className="input" value={title} onChange={e => setTitle(e.target.value)} placeholder={type === 'claim' ? '例如：低波动率因子在 A 股 2015 年后失效' : '页面标题'} autoFocus />
+          <input className="input" value={title} onChange={e => setTitle(e.target.value)} placeholder={({ company: '例如：某公司——商业模式与盈利驱动', industry: '例如：半导体设备——供需与竞争格局', macro: '例如：信用周期与内需修复', claim: '例如：供给收缩将改善行业盈利' } as Record<string, string>)[type] ?? '页面标题'} autoFocus />
         </div>
         <div className="field">
           <label>路径</label>
@@ -84,8 +100,23 @@ export function NewPageDialog() {
         </div>
         <div className="field">
           <label>标签（逗号分隔，可选）</label>
-          <input className="input" value={tags} onChange={e => setTags(e.target.value)} placeholder="例如：波动率, A股" />
+          <input className="input" value={tags} onChange={e => setTags(e.target.value)} placeholder="例如：消费, 产业政策, A股" />
         </div>
+        {RESEARCH_TYPES.includes(type) && <fieldset className="research-form">
+          <legend>研究跟踪（可选）</legend>
+          <p className="hint">资料截至日按实际证据填写；设置下次复核日期后，到期会出现在首页。</p>
+          <div className="research-form-grid">{Object.entries(RESEARCH_FIELDS).map(([key, spec]) => <div className="field" key={key}>
+            <label htmlFor={`research-${key}`}>{spec.label}</label>
+            {spec.options ? <select id={`research-${key}`} className="select" value={String(research[key] ?? '')} onChange={e => updateResearch(key, e.target.value)}>
+              <option value="">未设置</option>
+              {Object.entries(spec.options).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select> : <input id={`research-${key}`} className="input" type={spec.kind === 'date' ? 'date' : 'text'} maxLength={spec.kind === 'list' ? undefined : 200}
+              placeholder={key === 'tickers' ? '例如：600000.SH, 0700.HK' : key === 'horizon' ? '例如：未来 6–12 个月' : key === 'region' ? '例如：中国 / A股' : undefined}
+              value={spec.kind === 'list' ? tickers : String(research[key] ?? '')}
+              onInput={spec.kind === 'date' ? e => updateResearch(key, e.currentTarget.value) : undefined}
+              onChange={e => spec.kind === 'list' ? setTickers(e.target.value) : updateResearch(key, e.target.value)} />}
+          </div>)}</div>
+        </fieldset>}
         <div className="field">
           <label>关联（可选）</label>
           <div className="row">

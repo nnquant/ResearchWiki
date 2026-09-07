@@ -228,7 +228,7 @@ export async function importIma(name=config.imaKnowledgeBase,limit=3,{captureOnl
   }
   await atomicJson(dataPath('state','last-ima-import.json'),{at:now(),knowledge_base:name,results});return results;
 }
-const RELATION_TYPES=['supported_by','contradicted_by','derived_from','tests','uses_dataset','trades','measures'];
+const { researchRelations: RELATION_TYPES } = await import('./research-schema.mjs');
 const indexStatePath=dataPath('state','index-state.json');
 
 /** Slug gbrain assigns to a wiki file (lowercased path without extension). */
