@@ -86,6 +86,22 @@ node scripts/wiki.mjs search "研究问题"
 
 字段契约见 [article-metadata.schema.json](config/article-metadata.schema.json)，Agent 录入方式见 [agent-ingestion.md](config/agent-ingestion.md)。LLM 字段整理为可选功能，其私有配置放在数据目录 `runtime/article-llm.json`。未知字段应留空，文献入库不代表研究结论已验证。
 
+### 按月份批量处理报告
+
+```powershell
+# 生成固定队列：9→8→7→6→5 月目录，月内按文件名报告日期倒序
+node scripts/import-report-batch.mjs --source D:\data\reports\raw --output D:\data\reports\processed --year 2026 --from-month 9 --to-month 5 --plan
+# 先处理一份并验收；再启动隐藏后台进程持续处理剩余队列
+node scripts/import-report-batch.mjs --limit 1 --batch-size 1
+pwsh -File scripts/start-report-batch.ps1
+```
+
+批次仅扫描对应年份月份目录，不包含历史归档。文件名没有有效日期时使用日期子目录，再退到月份目录与修改时间；排序依据明确记录在队列中，不据此填充已核实发布日期。默认保留 `raw` 原件，处理成功后在 `processed` 中保留月份/日期/机构目录，每份报告单独一个目录，包含 `original.pdf`、`parsed`（Markdown、页码、图片、JSON）及 `report.json`（原路径、哈希、Wiki 链接和入库结果）。同内容文件复用已解析记录，仍分别导出到各自目录。
+
+`processed/_batch/plan.json` 是不可自动改写的固定队列，`status.json` 显示进度，`events.jsonl` 保存断点，`failures.jsonl` 保存失败原因。首份即时入库，此后每 5 份更新索引；远端仅串行提交一个 PDF。只有原件复制、解析结果导出和向量完整性校验均成功，才标记完成。服务不可用时等待，可用磁盘低于 10 GiB 时暂停。
+
+暂停：创建 `processed/_batch/pause` 空文件，当前解析与已解析小批次完成后退出。继续：删除该暂停文件，再运行启动脚本；已完成项不会重复处理。失败项默认跳过，可通过启动脚本 `-RetryFailed` 再试，远程任务仍复用已保存的 ID。上传结果不确定或远端任务已失败的报告需先排障，不自动重复上传。电脑重启后也需手动运行启动脚本，未安装计划任务。
+
 ## 投资研究工作流
 
 1. 从工作台创建公司、行业或宏观研究，按模板记录核心判断、预期差、支持与反方证据、催化剂和证伪条件。
