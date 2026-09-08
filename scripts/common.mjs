@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 import { researchSchema } from './research-schema.mjs';
 import { sharedConnection } from './shared-api-client.mjs';
+import { atomicRename } from './atomic-rename.mjs';
 
 export const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const config = JSON.parse(await fs.readFile(path.join(repo, 'config.json'), 'utf8'));
@@ -31,7 +32,7 @@ export async function atomicJson(file, value) {
     const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
     try {
       await fs.writeFile(temp, contents, 'utf8');
-      await fs.rename(temp, file);
+      await atomicRename(temp, file);
     } finally { await fs.rm(temp, { force: true }); }
   });
   jsonWrites.set(file, pending);
