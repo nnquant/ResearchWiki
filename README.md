@@ -96,9 +96,9 @@ node scripts/import-report-batch.mjs --limit 1 --batch-size 1
 pwsh -File scripts/start-report-batch.ps1
 ```
 
-批次仅扫描对应年份月份目录，不包含历史归档。文件名没有有效日期时使用日期子目录，再退到月份目录与修改时间；排序依据明确记录在队列中，不据此填充已核实发布日期。默认保留 `raw` 原件，处理成功后在 `processed` 中保留月份/日期/机构目录，每份报告单独一个目录，包含 `original.pdf`、`parsed`（Markdown、页码、图片、JSON）及 `report.json`（原路径、哈希、Wiki 链接和入库结果）。同内容文件复用已解析记录，仍分别导出到各自目录。
+批次仅扫描对应年份月份目录，不包含历史归档。文件名没有有效日期时使用日期子目录，再退到月份目录与修改时间；排序依据明确记录在队列中，不据此填充已核实发布日期。默认保留 `raw` 原件，处理成功后按报告日期直接保存到 `processed/YYYY-MM-DD/`（不再保留月份或机构目录层级），每份报告单独一个目录，包含 `original.pdf`、`parsed`（Markdown、页码、图片、JSON）及 `report.json`（原路径、哈希、Wiki 链接和入库结果）。同内容文件复用已解析记录，仍分别导出到各自目录。
 
-`processed/_batch/plan.json` 是不可自动改写的固定队列，`status.json` 显示进度，`events.jsonl` 保存断点，`failures.jsonl` 保存失败原因。首份即时入库，此后每 5 份更新索引；远端仅串行提交一个 PDF。只有原件复制、解析结果导出和向量完整性校验均成功，才标记完成。服务不可用时等待，可用磁盘低于 10 GiB 时暂停。
+已有旧目录可在暂停批次后运行 `pwsh -File scripts/migrate-report-layout.ps1` 迁移，原件和解析文件整目录移动，并更新断点路径。`processed/_batch/plan.json` 是不会自动重建的固定队列，`status.json` 显示进度，`events.jsonl` 保存断点，`failures.jsonl` 保存失败原因。首份即时入库，此后每 5 份更新索引；远端仅串行提交一个 PDF。只有原件复制、解析结果导出和向量完整性校验均成功，才标记完成。服务不可用时等待，可用磁盘低于 10 GiB 时暂停。
 
 只批量解析：运行 `pwsh -File scripts/start-report-batch.ps1 -ParseOnly -Concurrency 4 -RetryFailed`。`-Concurrency` 可设置 1–4 路解析并持久保存，默认 1。每组按日期从新到旧派发最多 4 篇，一组全部结束后再派发下一组；完成顺序可不同。暂停会停止派发并等待当前组结束。每篇解析后立即导出原件、Markdown、图片和 `report.json`（状态为 `parsed`），跳过文章 LLM、数据库索引和向量化。已解析文件直接复用；此前因向量失败的报告可以补导出。进度包含 `mode: parse_only`，并分别统计 `parsed_only` 和之前已完成的 `indexed`。启动脚本保存此模式，重启后仍只解析；以后明确需要向量化时使用 `-ParseOnly:$false`，会重访仅解析的完成项并复用正文。
 

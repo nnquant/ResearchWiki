@@ -16,6 +16,8 @@ test('plan includes selected month folders only and orders by report date instea
   assert.deepEqual(plan.files.map(f => f.order), [1, 2, 3, 4]);
   assert.equal(plan.months[9], 2);
   assert.equal(plan.months[6], 0);
+  assert.equal(plan.output_layout, 'report-date');
+  assert.ok(plan.files.every(f => f.output_relative.split('/').length === 2 && f.output_relative.startsWith(f.date + '/')));
 });
 test('invalid filename date falls back to dated directory; unknown dates stay labeled', () => {
   assert.deepEqual(reportDate('2026年9月/2026-09-05/20260900-无效.pdf', 1, 2026, 9), { date: '2026-09-05', date_source: 'directory' });
@@ -25,6 +27,10 @@ test('plan never nests output within raw and output names disambiguate truncatio
   await assert.rejects(buildReportPlan({ source: folder, output: path.join(folder, 'output') }), /相互独立/);
   assert.equal(within(folder, path.join(folder, '..', 'escape')), false);
   assert.notEqual(reportOutput('机构/' + '相同'.repeat(100) + '甲.pdf').output_relative, reportOutput('机构/' + '相同'.repeat(100) + '乙.pdf').output_relative);
+  const old = reportOutput('2026年9月/2026-09-06/机构/20260904-报告.pdf');
+  const flat = reportOutput('2026年9月/2026-09-06/机构/20260904-报告.pdf', '2026-09-04');
+  assert.equal(old.id, flat.id); // Moving output never changes resume/deduplication identity.
+  assert.equal(flat.output_relative, '2026-09-04/' + path.basename(old.output_relative));
 });
 test('journal resumes latest state, tolerates an interrupted final append, rejects middle corruption', () => {
   const entries = '{"id":"a","status":"processing","order":1}\n{"id":"a","status":"completed"}\n{"id":';

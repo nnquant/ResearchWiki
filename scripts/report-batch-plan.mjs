@@ -21,11 +21,12 @@ export function reportDate(relative, mtimeMs, year, month) {
 export function compareReports(a, b) {
   return b.month - a.month || b.date.localeCompare(a.date) || (a.date_source === 'month-directory' && b.date_source === 'month-directory' ? b.mtime_ms - a.mtime_ms : 0) || a.relative.localeCompare(b.relative, 'zh-CN');
 }
-export function reportOutput(relative) {
+export function reportOutput(relative, date) {
   const id = digest(relative.replaceAll('\\', '/')).slice(0, 16);
   const stem = path.basename(relative, path.extname(relative)).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
   const label = [...stem].slice(0, 65).join('').replace(/[. ]+$/, '') || 'report';
-  return { id, output_relative: path.join(path.dirname(relative), label + '--' + id).replaceAll('\\', '/') };
+  if (date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('输出目录需要 YYYY-MM-DD 日期');
+  return { id, output_relative: path.join(date ?? path.dirname(relative), label + '--' + id).replaceAll('\\', '/') };
 }
 export async function buildReportPlan({ source, output, year = 2026, fromMonth = 9, toMonth = 5 }) {
   source = path.resolve(source); output = path.resolve(output);
@@ -38,7 +39,8 @@ export async function buildReportPlan({ source, output, year = 2026, fromMonth =
       if (item.isDirectory()) await walk(file, month);
       else if (item.isFile() && /\.pdf$/i.test(item.name)) {
         const stat = await fs.stat(file), relative = path.relative(source, file);
-        files.push({ ...reportOutput(relative), relative: relative.replaceAll('\\', '/'), month, size: stat.size, mtime_ms: stat.mtimeMs, ...reportDate(relative, stat.mtimeMs, year, month) });
+        const dated = reportDate(relative, stat.mtimeMs, year, month);
+        files.push({ ...reportOutput(relative, dated.date), relative: relative.replaceAll('\\', '/'), month, size: stat.size, mtime_ms: stat.mtimeMs, ...dated });
       }
     }
   }
@@ -48,7 +50,7 @@ export async function buildReportPlan({ source, output, year = 2026, fromMonth =
   }
   files.sort(compareReports);
   files.forEach((file, i) => { file.order = i + 1; });
-  return { version: 1, created_at: new Date().toISOString(), source, output, year, from_month: fromMonth, to_month: toMonth, order: 'month-desc, report-date-desc, relative-path', total: files.length, bytes: files.reduce((n, f) => n + f.size, 0), months: Object.fromEntries(Array.from({length: fromMonth - toMonth + 1}, (_, i) => { const month = fromMonth - i; return [month, files.filter(f => f.month === month).length]; })), files };
+  return { version: 2, output_layout: 'report-date', created_at: new Date().toISOString(), source, output, year, from_month: fromMonth, to_month: toMonth, order: 'month-desc, report-date-desc, relative-path', total: files.length, bytes: files.reduce((n, f) => n + f.size, 0), months: Object.fromEntries(Array.from({length: fromMonth - toMonth + 1}, (_, i) => { const month = fromMonth - i; return [month, files.filter(f => f.month === month).length]; })), files };
 }
 
 export function readEvents(text) {

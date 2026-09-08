@@ -15,6 +15,11 @@ Set-Location $repoRoot
 $outputRoot = [IO.Path]::GetFullPath($Output)
 $batchDir = Join-Path $outputRoot '_batch'
 New-Item -ItemType Directory -Force -Path $batchDir | Out-Null
+if (Test-Path -LiteralPath (Join-Path $batchDir 'layout.lock')) { throw '输出目录迁移正在进行' }
+$layoutState = Join-Path $batchDir 'layout-date-migration.json'
+if (Test-Path -LiteralPath $layoutState) {
+    if ((Get-Content -LiteralPath $layoutState -Raw | ConvertFrom-Json).status -ne 'completed') { throw '输出目录迁移未完成，请先恢复迁移' }
+}
 $workerState = Join-Path $batchDir 'worker.json'
 if (-not $PSBoundParameters.ContainsKey('ParseOnly') -and (Test-Path -LiteralPath $workerState)) {
     $savedWorker = Get-Content -LiteralPath $workerState -Raw | ConvertFrom-Json
