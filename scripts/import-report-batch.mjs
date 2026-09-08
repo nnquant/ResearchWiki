@@ -22,7 +22,11 @@ export async function loadOrCreatePlan(options) {
   return plan;
 }
 
-export async function exportProcessed(plan, item, record) {
+export function reportCompleted(entry, parseOnly) {
+  return entry?.status === 'completed' && (parseOnly || entry.processing_mode !== 'parse_only');
+}
+
+export async function exportProcessed(plan, item, record, { parseOnly = false } = {}) {
   const target = path.resolve(plan.output, item.output_relative);
   if (!within(plan.output, target)) throw new Error('输出目录越界');
   await fs.mkdir(target, { recursive: true });
@@ -38,17 +42,17 @@ export async function exportProcessed(plan, item, record) {
   const parsed = dataPath('parsed', record.id, record.revision);
   await fs.cp(parsed, path.join(target, 'parsed'), { recursive: true, force: true, errorOnExist: false });
   const report = {
-    status: 'indexed', completed_at: now(), source_relative: item.relative, source_file: path.join(plan.source, item.relative), original_filename: path.basename(item.relative),
+    status: parseOnly ? 'parsed' : 'indexed', completed_at: now(), source_relative: item.relative, source_file: path.join(plan.source, item.relative), original_filename: path.basename(item.relative),
     sha256: record.sha256, report_date_for_sort: item.date, date_source: item.date_source, month_directory: item.month,
     title: record.title, pages: record.pages, characters: record.characters, parser: record.parser, remote_parser: record.remote_parser,
-    wiki_slug: record.wiki_slug, wiki_url: `http://127.0.0.1:${config.port}/page/${record.wiki_slug.split('/').map(encodeURIComponent).join('/')}`,
+    wiki_slug: record.wiki_slug, wiki_url: parseOnly ? null : `http://127.0.0.1:${config.port}/page/${record.wiki_slug.split('/').map(encodeURIComponent).join('/')}`,
     markdown: path.relative(target, path.join(target, 'parsed', path.relative(parsed, dataPath(record.parsed_path)))).replaceAll('\\','/'),
   };
   await atomicJson(path.join(target, 'report.json'), report); // Completion marker is written last.
   return target;
 }
 
-export async function runReportBatch(plan, { limit = Infinity, batchSize = 5, retryFailed = false } = {}) {
+export async function runReportBatch(plan, { limit = Infinity, batchSize = 5, retryFailed = false, parseOnly = false } = {}) {
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 20 || !(limit > 0)) throw new Error('无效的批次大小或处理数量');
   const client = createSharedClient(sharedConnection(config, root) ?? (() => { throw new Error('报告批次要求已启用内网服务'); })());
   const dir = path.join(plan.output, '_batch');
@@ -69,17 +73,18 @@ export async function runReportBatch(plan, { limit = Infinity, batchSize = 5, re
   const stop = () => { stopping = true; };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
   const counts = () => {
-    const out = { total: plan.total, completed: 0, failed: 0, pending: 0 };
+    const out = { total: plan.total, completed: 0, failed: 0, pending: 0, parsed_only: 0, indexed: 0 };
     for (const item of plan.files) {
-      const status = states.get(item.id)?.status;
-      if (status === 'completed') out.completed++;
+      const entry = states.get(item.id), status = entry?.status;
+      if (reportCompleted(entry, parseOnly)) out.completed++;
       else if (status === 'failed') out.failed++;
       else out.pending++;
+      if (status === 'completed') out[entry.processing_mode === 'parse_only' ? 'parsed_only' : 'indexed']++;
     }
     return out;
   };
   async function status(phase, extra = {}) {
-    await atomicJson(path.join(dir, 'status.json'), { pid: process.pid, phase, updated_at: now(), source: plan.source, output: plan.output, order: plan.order, months: plan.months, counts: counts(), active, ...extra });
+    await atomicJson(path.join(dir, 'status.json'), { pid: process.pid, phase, mode: parseOnly ? 'parse_only' : 'index', updated_at: now(), source: plan.source, output: plan.output, order: plan.order, months: plan.months, counts: counts(), active, ...extra });
   }
   async function event(item, update) {
     const entry = { ...states.get(item.id), id: item.id, relative: item.relative, order: item.order, ...update, updated_at: now() };
@@ -98,26 +103,28 @@ export async function runReportBatch(plan, { limit = Infinity, batchSize = 5, re
   async function finishGroup() {
     if (!pending.length) return;
     const group = pending; pending = [];
-    await status('indexing', { indexing: group.map(x => x.item.relative) });
+    await status(parseOnly ? 'exporting' : 'indexing', { processing: group.map(x => x.item.relative) });
     let indexError;
-    try { await acquire(indexWiki); } catch (e) { indexError = e; }
+    if (!parseOnly) { try { await acquire(indexWiki); } catch (e) { indexError = e; } }
     let verified = 0;
     for (const { item, record } of group) {
       try {
-        const sql = await getSql();
-        const [check] = await sql`SELECT count(c.id)::int AS total, count(c.embedding)::int AS embedded FROM pages p JOIN content_chunks c ON c.page_id=p.id WHERE p.slug=${record.wiki_slug} AND p.deleted_at IS NULL`;
-        if (!check?.total || check.total !== check.embedded) throw new Error(indexError?.message || '该文献索引或向量不完整，未标记处理完成');
+        if (!parseOnly) {
+          const sql = await getSql();
+          const [check] = await sql`SELECT count(c.id)::int AS total, count(c.embedding)::int AS embedded FROM pages p JOIN content_chunks c ON c.page_id=p.id WHERE p.slug=${record.wiki_slug} AND p.deleted_at IS NULL`;
+          if (!check?.total || check.total !== check.embedded) throw new Error(indexError?.message || '该文献索引或向量不完整，未标记处理完成');
+        }
         verified++;
-        const exported = await exportProcessed(plan, item, record);
-        await event(item, { status: 'completed', document_id: record.id, wiki_slug: record.wiki_slug, output: exported, pages: record.pages, error: null });
+        const exported = await exportProcessed(plan, item, record, { parseOnly });
+        await event(item, { status: 'completed', processing_mode: parseOnly ? 'parse_only' : 'index', document_id: record.id, wiki_slug: record.wiki_slug, output: exported, pages: record.pages, error: null });
         console.log(JSON.stringify({ at: now(), status: 'completed', order: item.order, total: plan.total, title: record.title, pages: record.pages, counts: counts() }));
       } catch (e) {
-        await event(item, { status: 'failed', document_id: record.id, stage: 'index-or-export', error: e.message });
-        await fs.appendFile(path.join(dir, 'failures.jsonl'), JSON.stringify({ at: now(), relative: item.relative, stage: 'index-or-export', error: e.message }) + '\n');
+        await event(item, { status: 'failed', document_id: record.id, stage: parseOnly ? 'export' : 'index-or-export', error: e.message });
+        await fs.appendFile(path.join(dir, 'failures.jsonl'), JSON.stringify({ at: now(), relative: item.relative, stage: parseOnly ? 'export' : 'index-or-export', error: e.message }) + '\n');
       }
     }
     failedIndexGroups = verified ? 0 : failedIndexGroups + 1;
-    if (failedIndexGroups >= 3) throw new Error('连续三个小批次未能完成向量索引，批次已停止以便排障；已解析原件与队列均保留');
+    if (failedIndexGroups >= 3) throw new Error('连续三个小批次处理失败，批次已停止以便排障；已解析原件与队列均保留');
     active = null; await status('running');
   }
   try {
@@ -127,7 +134,7 @@ export async function runReportBatch(plan, { limit = Infinity, batchSize = 5, re
     for (const item of plan.files) {
       if (handled >= limit || stopping || await fs.access(path.join(dir, 'pause')).then(()=>true,()=>false)) { stopping = true; break; }
       const previous = states.get(item.id);
-      if (previous?.status === 'completed' || (previous?.status === 'failed' && !retryFailed)) continue;
+      if (reportCompleted(previous, parseOnly) || (previous?.status === 'failed' && !retryFailed)) continue;
       if (pending.length && pending.at(-1).item.month !== item.month) await finishGroup();
       active = { order: item.order, relative: item.relative, month: item.month, report_date: item.date };
       // Pause on a service-wide outage instead of burning through the queue as individual failures.
@@ -157,7 +164,7 @@ export async function runReportBatch(plan, { limit = Infinity, batchSize = 5, re
           const known = byHash.get(hash);
           if (known && ['parsed','indexed'].includes(known.status)) return known;
           const existing = known || await capture({ bytes, filename: path.basename(file), title: path.basename(file, '.pdf'), source_kind: 'local', source_meta: { import_method: 'report-batch', import_path: file, batch_order: item.order, month_directory: item.month, sort_date: item.date, sort_date_source: item.date_source }, metadata: { document_type: '研报' } });
-          const parsed = await parseRecord(existing);
+          const parsed = await parseRecord(existing, { skipArticleAnalysis: parseOnly });
           byHash.set(hash, parsed); return parsed;
         });
         await event(item, { status: 'parsed', document_id: record.id, wiki_slug: record.wiki_slug });
@@ -169,7 +176,7 @@ export async function runReportBatch(plan, { limit = Infinity, batchSize = 5, re
       }
       handled++;
       // Publish the first report immediately, then amortize indexing across small batches.
-      if (pending.length >= batchSize || counts().completed === 0) await finishGroup();
+      if (parseOnly || pending.length >= batchSize || counts().completed === 0) await finishGroup();
     }
     // A normal pause drains parsed reports; forced termination is safely resumed from events + manifest.
     if (pending.length) { stopping = false; await finishGroup(); stopping = true; }
@@ -192,6 +199,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const source = option('--source', 'D:/data/reports/raw'), output = option('--output', 'D:/data/reports/processed');
     const plan = await loadOrCreatePlan({ source, output, year: Number(option('--year', 2026)), fromMonth: Number(option('--from-month', 9)), toMonth: Number(option('--to-month', 5)) });
     if (args.includes('--plan')) console.log(JSON.stringify({ ...plan, files: plan.files.slice(0, 8) }, null, 2));
-    else await runReportBatch(plan, { limit: Number(option('--limit', Infinity)), batchSize: Number(option('--batch-size', 5)), retryFailed: args.includes('--retry-failed') });
+    else await runReportBatch(plan, { limit: Number(option('--limit', Infinity)), batchSize: Number(option('--batch-size', 5)), retryFailed: args.includes('--retry-failed'), parseOnly: args.includes('--parse-only') });
   } catch (e) { console.error(e.message); process.exitCode = 1; }
 }

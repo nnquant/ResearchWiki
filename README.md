@@ -100,7 +100,9 @@ pwsh -File scripts/start-report-batch.ps1
 
 `processed/_batch/plan.json` 是不可自动改写的固定队列，`status.json` 显示进度，`events.jsonl` 保存断点，`failures.jsonl` 保存失败原因。首份即时入库，此后每 5 份更新索引；远端仅串行提交一个 PDF。只有原件复制、解析结果导出和向量完整性校验均成功，才标记完成。服务不可用时等待，可用磁盘低于 10 GiB 时暂停。
 
-暂停：创建 `processed/_batch/pause` 空文件，当前解析与已解析小批次完成后退出。继续：删除该暂停文件，再运行启动脚本；已完成项不会重复处理。失败项默认跳过，可通过启动脚本 `-RetryFailed` 再试，远程任务仍复用已保存的 ID。上传结果不确定或远端任务已失败的报告需先排障，不自动重复上传。电脑重启后也需手动运行启动脚本，未安装计划任务。
+只批量解析：运行 `pwsh -File scripts/start-report-batch.ps1 -ParseOnly -RetryFailed`。每篇解析后立即导出原件、Markdown、图片和 `report.json`（状态为 `parsed`），跳过文章 LLM、数据库索引和向量化。已解析文件直接复用；此前因向量失败的报告可以补导出。进度包含 `mode: parse_only`，并分别统计 `parsed_only` 和之前已完成的 `indexed`。启动脚本保存此模式，重启后仍只解析；以后明确需要向量化时使用 `-ParseOnly:$false`，会重访仅解析的完成项并复用正文。
+
+暂停：创建 `processed/_batch/pause` 空文件，当前解析与已解析小批次完成后退出。继续：删除该暂停文件，再运行启动脚本；当前模式已完成项不会重复处理。失败项默认跳过，可通过启动脚本 `-RetryFailed` 再试，远程任务仍复用已保存的 ID。上传结果不确定或远端任务已失败的报告需先排障，不自动重复上传。电脑重启后也需手动运行启动脚本，未安装计划任务。
 
 ## 投资研究工作流
 

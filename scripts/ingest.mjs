@@ -102,7 +102,7 @@ export async function capture({bytes,filename,title,source_kind='local',source_u
     status:'captured',history:old&&old.sha256!==hash?[...(old.history||[]),{revision:old.revision,sha256:old.sha256,parsed_path:old.parsed_path,updated_at:old.updated_at}]:old?.history||[]};
   await saveRecord(record);await atomicJson(path.join(folder,'provenance.json'),record);return record;
 }
-export async function parseRecord(record,{mineruVramGB}={}) {
+export async function parseRecord(record,{mineruVramGB,skipArticleAnalysis=false}={}) {
   if(record.duplicate)return record;
   const out=dataPath('parsed',record.id,record.revision);await fs.mkdir(out,{recursive:true});
   record.status='parsing';await saveRecord(record);
@@ -142,7 +142,7 @@ export async function parseRecord(record,{mineruVramGB}={}) {
     if(body.trim().length<80)throw new Error('正文过短，保留原件并标记解析失败');
     record={...record,...details,parsed_path:slash(path.relative(root,md)),characters:body.length,status:'parsed',updated_at:now(),error:null,wiki_slug:`sources/${record.id}`};
     await saveRecord({...record,status:'processing'});
-    const analysis=await readArticle(record,body);
+    const analysis=skipArticleAnalysis?null:await readArticle(record,body);
     if(analysis) {
       const explicitTags=Object.hasOwn(record.article_metadata||{},'tags');
       record.article_metadata={...analysis.metadata,...record.article_metadata};

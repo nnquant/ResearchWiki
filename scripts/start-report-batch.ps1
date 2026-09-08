@@ -5,7 +5,8 @@ param(
     [int]$FromMonth = 9,
     [int]$ToMonth = 5,
     [int]$BatchSize = 5,
-    [switch]$RetryFailed
+    [switch]$RetryFailed,
+    [switch]$ParseOnly
 )
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\deployment.ps1"
@@ -13,6 +14,11 @@ Set-Location $repoRoot
 $outputRoot = [IO.Path]::GetFullPath($Output)
 $batchDir = Join-Path $outputRoot '_batch'
 New-Item -ItemType Directory -Force -Path $batchDir | Out-Null
+$workerState = Join-Path $batchDir 'worker.json'
+if (-not $PSBoundParameters.ContainsKey('ParseOnly') -and (Test-Path -LiteralPath $workerState)) {
+    $savedWorker = Get-Content -LiteralPath $workerState -Raw | ConvertFrom-Json
+    $ParseOnly = $savedWorker.mode -eq 'parse_only'
+}
 $workerFile = Join-Path $batchDir 'worker.lock'
 $batchScript = Join-Path $repoRoot 'scripts\import-report-batch.mjs'
 if (Test-Path -LiteralPath $workerFile) {
@@ -38,8 +44,9 @@ node scripts/patch-gbrain.mjs
 if ($LASTEXITCODE -ne 0) { throw 'GBrain 兼容检查失败' }
 $workerArgs = @(('"' + $batchScript + '"'), '--source', ('"' + $Source + '"'), '--output', ('"' + $Output + '"'), '--year', [string]$Year, '--from-month', [string]$FromMonth, '--to-month', [string]$ToMonth, '--batch-size', [string]$BatchSize)
 if ($RetryFailed) { $workerArgs += '--retry-failed' }
+if ($ParseOnly) { $workerArgs += '--parse-only' }
 $worker = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList $workerArgs -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $batchDir 'worker.stdout.log') -RedirectStandardError (Join-Path $batchDir 'worker.stderr.log') -PassThru
-@{pid=$worker.Id;source=$Source;output=$Output;started_at=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $batchDir 'worker.json') -Encoding utf8
+@{pid=$worker.Id;source=$Source;output=$Output;mode=$(if ($ParseOnly) { 'parse_only' } else { 'index' });started_at=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $batchDir 'worker.json') -Encoding utf8
 $started = $false
 for ($attempt=0; $attempt -lt 20; $attempt++) {
     $worker.Refresh()

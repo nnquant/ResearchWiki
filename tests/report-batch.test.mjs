@@ -35,7 +35,7 @@ test('journal resumes latest state, tolerates an interrupted final append, rejec
 test('processed export preserves originals, relative assets and a final completion record', async () => {
   const data = path.join(folder, 'wiki-data');
   process.env.WIKI_DATA_ROOT = data;
-  const { exportProcessed } = await import('../scripts/import-report-batch.mjs');
+  const { exportProcessed, reportCompleted } = await import('../scripts/import-report-batch.mjs');
   const { sha } = await import('../scripts/common.mjs');
   const raw = path.join(data, 'raw/test.pdf'), parsed = path.join(data, 'parsed/doc/rev/document/auto');
   await fs.mkdir(path.dirname(raw), { recursive: true }); await fs.mkdir(path.join(parsed, 'images'), { recursive: true });
@@ -51,6 +51,18 @@ test('processed export preserves originals, relative assets and a final completi
   assert.deepEqual(await fs.readFile(path.join(out, 'original.pdf')), original);
   assert.equal(await fs.readFile(path.join(out, 'parsed/document/auto/images/x.png'), 'utf8'), 'fixture image');
   assert.equal(JSON.parse(await fs.readFile(path.join(out, 'report.json'), 'utf8')).status, 'indexed');
+  const parseItem = { ...item, output_relative: 'parse-only/report--id' };
+  const parseOut = await exportProcessed(plan, parseItem, record, { parseOnly: true });
+  const parseReport = JSON.parse(await fs.readFile(path.join(parseOut, 'report.json'), 'utf8'));
+  assert.equal(parseReport.status, 'parsed');
+  assert.equal(parseReport.wiki_url, null);
+  assert.deepEqual(await fs.readFile(path.join(parseOut, 'original.pdf')), original);
+  // A later indexing run must revisit parse-only completions, but never reparse them.
+  const parsedEntry = { status: 'completed', processing_mode: 'parse_only' };
+  assert.equal(reportCompleted(parsedEntry, true), true);
+  assert.equal(reportCompleted(parsedEntry, false), false);
+  assert.equal(reportCompleted({ status: 'completed' }, false), true);
+  assert.equal(reportCompleted({ status: 'failed' }, true), false);
   await fs.writeFile(path.join(out, 'original.pdf'), 'different original');
   await assert.rejects(exportProcessed(plan, item, record));
 });
