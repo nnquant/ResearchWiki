@@ -187,6 +187,8 @@ export interface Job {
 
 export interface ServiceHealth {
   ok: boolean;
+  provider?: 'shared' | 'local';
+  endpoint?: string;
   error?: string | null;
   version?: string | null;
   model_present?: boolean;

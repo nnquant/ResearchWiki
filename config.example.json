@@ -8,6 +8,11 @@
   "embeddingModel": "ollama:bge-m3",
   "embeddingDimensions": 1024,
   "ollamaUrl": "http://127.0.0.1:11435",
+  "sharedApi": {
+    "enabled": true,
+    "baseUrl": "http://jiangda-pc.tail916afd.ts.net:8019",
+    "apiKeyFile": "runtime/shared-api-key"
+  },
   "mineruBackend": "pipeline",
   "mineruDevice": "cpu",
   "mineruModelSource": "modelscope",

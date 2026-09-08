@@ -1,4 +1,5 @@
-import { config, gb } from '../common.mjs';
+import { config, root, gb } from '../common.mjs';
+import { sharedConnection, createSharedClient } from '../shared-api-client.mjs';
 import { callTool } from './mcp-client.mjs';
 import { pdfPageForChunk } from './pages-service.mjs';
 import { HttpError } from './errors.mjs';
@@ -13,20 +14,22 @@ const WARM_INTERVAL_MS = 4 * 60 * 1000;
  * turns it into an empty result set.
  */
 export async function warmEmbeddings() {
+  if (config.sharedApi?.enabled) return false;
   try {
-    await fetch(`${config.ollamaUrl}/api/embed`, {
+    const response = await fetch(`${config.ollamaUrl}/api/embed`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ model: ollamaModel, input: 'warm', keep_alive: '2h' }),
       signal: AbortSignal.timeout(60000),
     });
-    return true;
+    return response.ok;
   } catch {
     return false;
   }
 }
 
 export function startEmbeddingWarmer() {
+  if (config.sharedApi?.enabled) return; // Shared service controls its own model residency.
   warmEmbeddings();
   const timer = setInterval(warmEmbeddings, WARM_INTERVAL_MS);
   timer.unref();
@@ -34,13 +37,18 @@ export function startEmbeddingWarmer() {
 
 export async function ollamaHealth() {
   try {
+    if (config.sharedApi?.enabled) {
+      const client = createSharedClient(sharedConnection(config, root));
+      const models = await client.models();
+      return { ok: true, model_present: models.data?.some(m => m.id === ollamaModel) ?? false, provider: 'shared', endpoint: config.sharedApi.baseUrl };
+    }
     const res = await fetch(`${config.ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(2000) });
     if (!res.ok) return { ok: false };
     const body = await res.json();
     const loaded = (body.models ?? []).some(m => String(m.name).startsWith(ollamaModel));
     return { ok: true, model_present: loaded };
-  } catch {
-    return { ok: false };
+  } catch (error) {
+    return { ok: false, provider: config.sharedApi?.enabled ? 'shared' : 'local', error: error.message };
   }
 }
 
@@ -99,14 +107,14 @@ export async function search({ q, mode = 'fast', types = [], limit = 20, offset 
     const tool = mode === 'deep' ? 'query' : 'search';
     const args = { query, limit, offset, snippet_chars: 0 };
     if (types.length) args.types = types;
-    const { data, meta } = await callTool(tool, args, { timeoutMs: 90000 });
+    const { data, meta } = await callTool(tool, args, { timeoutMs: config.sharedApi?.enabled ? 240000 : 90000 });
     hits = Array.isArray(data) ? data : [];
     degraded = meta?.retrieval?.degraded ?? [];
   } catch (mcpError) {
     engine = 'cli';
     const args = ['query', query, '--json'];
     if (types.length) args.push('--types', types.join(','));
-    const { stdout } = await gb(args, { timeout: 120000 });
+    const { stdout } = await gb(args, { timeout: config.sharedApi?.enabled ? 240000 : 120000 });
     try { hits = JSON.parse(stdout); }
     catch { throw new HttpError(502, `检索失败：${mcpError.message}`); }
     hits = hits.slice(offset, offset + limit);

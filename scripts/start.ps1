@@ -2,11 +2,14 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\deployment.ps1"
 Set-Location $repoRoot
 
-docker compose @composeArgs up -d --wait
+if ($wikiConfig.sharedApi.enabled -and -not $env:QUANT_API_KEY) { throw '请配置内网服务 QUANT_API_KEY 或 sharedApi.apiKeyFile' }
+node scripts/patch-gbrain.mjs
+if ($LASTEXITCODE -ne 0) { throw 'GBrain 兼容检查失败' }
+$composeServices = @(if ($wikiConfig.sharedApi.enabled) { 'postgres' } else { 'postgres'; 'embeddings' })
+docker compose @composeArgs up -d --wait @composeServices
 if ($LASTEXITCODE -ne 0) { throw '数据库或 embedding 服务启动失败' }
 $env:GBRAIN_HOME = "$dataRoot\runtime"
 $env:GBRAIN_SOURCE = 'default'
-$env:OLLAMA_BASE_URL = $wikiConfig.ollamaUrl.TrimEnd('/') + '/v1'
 $nodeExe = (Get-Command node.exe).Source
 $bunExe = Join-Path $repoRoot 'node_modules\bun\bin\bun.exe'
 $stateFile = "$dataRoot\state\services.json"
@@ -36,13 +39,24 @@ if (-not $services.ContainsKey('mcp')) {
     # The Wiki 前端通过 MCP 做检索；默认 30 次/分钟的限速对本机交互式搜索太低。仅监听 127.0.0.1。
     $env:GBRAIN_HTTP_RATE_LIMIT_IP = '600'
     $env:GBRAIN_HTTP_RATE_LIMIT_TOKEN = '600'
-    $mcpProc = Start-Process -FilePath $bunExe -ArgumentList @((Join-Path $repoRoot 'vendor\gbrain\src\cli.ts'),'serve','--http','--port',([string]$wikiConfig.mcpPort),'--bind','127.0.0.1','--surface','starter') -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput "$dataRoot\logs\mcp.stdout.log" -RedirectStandardError "$dataRoot\logs\mcp.stderr.log" -PassThru
+    $mcpProc = Start-Process -FilePath $bunExe -ArgumentList @('--preload',(Join-Path $repoRoot 'scripts\gbrain-shared-preload.mjs'),(Join-Path $repoRoot 'vendor\gbrain\src\cli.ts'),'serve','--http','--port',([string]$wikiConfig.mcpPort),'--bind','127.0.0.1','--surface','starter') -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput "$dataRoot\logs\mcp.stdout.log" -RedirectStandardError "$dataRoot\logs\mcp.stderr.log" -PassThru
     Remove-Item Env:\GBRAIN_ADMIN_BOOTSTRAP_TOKEN
     Remove-Item Env:\GBRAIN_HTTP_RATE_LIMIT_IP
     Remove-Item Env:\GBRAIN_HTTP_RATE_LIMIT_TOKEN
     $services.mcp = @{pid=$mcpProc.Id;port=$wikiConfig.mcpPort}
 }
 $services | ConvertTo-Json -Depth 5 | Set-Content $stateFile -Encoding utf8
+$ready = $false
+$readyDeadline = [DateTime]::UtcNow.AddSeconds(45)
+while ([DateTime]::UtcNow -lt $readyDeadline) {
+    try {
+        $mcpReady = Invoke-RestMethod "http://127.0.0.1:$($wikiConfig.mcpPort)/health" -TimeoutSec 2
+        $wikiReady = Invoke-WebRequest "http://127.0.0.1:$($wikiConfig.port)/" -TimeoutSec 2
+        if ($mcpReady.status -eq 'ok' -and $wikiReady.StatusCode -eq 200) { $ready = $true; break }
+    } catch { }
+    Start-Sleep -Milliseconds 500
+}
+if (-not $ready) { throw 'Wiki 或 MCP 未在 45 秒内就绪，请检查数据目录 logs' }
 Write-Host "Wiki: http://127.0.0.1:$($wikiConfig.port)"
 Write-Host "MCP:  http://127.0.0.1:$($wikiConfig.mcpPort)/mcp"
 & (Join-Path $PSScriptRoot 'start-import-watch.ps1')

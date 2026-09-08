@@ -2,10 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 import { researchSchema } from './research-schema.mjs';
+import { sharedConnection } from './shared-api-client.mjs';
 
 export const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const config = JSON.parse(await fs.readFile(path.join(repo, 'config.json'), 'utf8'));
@@ -21,11 +22,20 @@ export const safeName = name => {
   return (clean.length<=150?clean:clean.slice(0,150-ext.length).replace(/[. ]+$/,'')+ext)||'document';
 };
 
+const jsonWrites = new Map();
 export async function atomicJson(file, value) {
-  await fs.mkdir(path.dirname(file), {recursive: true});
-  const temp = `${file}.${process.pid}.tmp`;
-  await fs.writeFile(temp, JSON.stringify(value, null, 2) + '\n', 'utf8');
-  await fs.rename(temp, file);
+  const contents = JSON.stringify(value, null, 2) + '\n';
+  // Serialize same-file writes: Windows cannot reliably replace one file concurrently.
+  const pending = (jsonWrites.get(file) ?? Promise.resolve()).catch(() => {}).then(async () => {
+    await fs.mkdir(path.dirname(file), {recursive: true});
+    const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      await fs.writeFile(temp, contents, 'utf8');
+      await fs.rename(temp, file);
+    } finally { await fs.rm(temp, { force: true }); }
+  });
+  jsonWrites.set(file, pending);
+  try { await pending; } finally { if (jsonWrites.get(file) === pending) jsonWrites.delete(file); }
 }
 export async function readJson(file, fallback) {
   try { return JSON.parse(await fs.readFile(file, 'utf8')); }
@@ -53,8 +63,10 @@ export async function withLock(fn) {
   finally { await handle.close(); await fs.unlink(file); }
 }
 export function runtimeEnv() {
+  const shared = sharedConnection(config, root);
   return {...process.env,
-    GBRAIN_HOME:dataPath('runtime'), GBRAIN_SOURCE:'default', OLLAMA_BASE_URL:config.ollamaUrl+'/v1',
+    GBRAIN_HOME:dataPath('runtime'), GBRAIN_SOURCE:'default', OLLAMA_BASE_URL:(shared?.baseUrl || config.ollamaUrl).replace(/\/$/, '')+'/v1',
+    ...(shared ? { OLLAMA_API_KEY:shared.apiKey, WIKI_SHARED_API:'1', GBRAIN_AI_EMBED_TIMEOUT_MS:'210000', GBRAIN_QUERY_EMBED_TIMEOUT_MS:'210000' } : { WIKI_SHARED_API:'0' }),
     HF_HOME:dataPath('models','huggingface'), MODELSCOPE_CACHE:dataPath('models','modelscope'),
     MINERU_TOOLS_CONFIG_JSON:dataPath('runtime','mineru.json'), MINERU_MODEL_SOURCE:config.mineruModelSource,
     PYTHONUTF8:'1', PYTHONIOENCODING:'utf-8', UV_CACHE_DIR:dataPath('cache','uv'),
@@ -79,7 +91,7 @@ export function run(executable, args, {env=runtimeEnv(), timeout=600000, cwd=rep
 }
 export const bun = path.join(repo,'node_modules','bun','bin',os.platform()==='win32'?'bun.exe':'bun');
 export const gbrainCli = path.join(repo,'vendor','gbrain','src','cli.ts');
-export const gb = (args,options) => run(bun,[gbrainCli,...args],options);
+export const gb = (args,options) => run(bun,['--preload',path.join(repo,'scripts','gbrain-shared-preload.mjs'),gbrainCli,...args],options);
 export function assetUrl(file) {
   const rel=slash(path.relative(root,file));
   if(rel.startsWith('../')||path.isAbsolute(rel))throw new Error('文件不在数据目录中');

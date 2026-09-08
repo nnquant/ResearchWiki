@@ -33,7 +33,7 @@ export function StatusPage() {
       <div className="stat-grid">
         <Service name="PostgreSQL + pgvector" ok={stats.services.postgres.ok} detail={stats.services.postgres.error ?? '127.0.0.1:5436'} />
         <Service name="GBrain MCP" ok={stats.services.mcp.ok} detail={stats.services.mcp.version ? `v${stats.services.mcp.version} · :3131` : ':3131'} />
-        <Service name="Ollama embedding" ok={stats.services.ollama.ok} detail={stats.services.ollama.ok ? (stats.services.ollama.model_present ? `${stats.model} 已就绪` : `${stats.model} 未加载`) : ':11435'} />
+        <Service name={stats.services.ollama.provider === 'shared' ? '内网 GPU embedding' : 'Ollama embedding'} ok={stats.services.ollama.ok && stats.services.ollama.model_present !== false} detail={stats.services.ollama.error ?? (stats.services.ollama.ok ? `${stats.model} · ${stats.services.ollama.model_present ? '可用' : '模型不可用'}` : '服务不可用')} />
       </div>
 
       <h2 className="section-title">索引</h2>

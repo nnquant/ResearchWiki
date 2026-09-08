@@ -18,7 +18,7 @@
 
 ## 安装（Windows）
 
-当前安装脚本面向 Windows、PowerShell 7、Node.js 24、Git、uv 和 Docker Desktop。默认使用 CPU，数据目录为 `D:\data\researchwiki-investment`。有 NVIDIA GPU 时可将 `mineruDevice` 改为 `cuda`，安装脚本会选用 CUDA 依赖与 GPU Compose 配置。
+当前安装脚本面向 Windows、PowerShell 7、Node.js 24、Git 和 Docker Desktop。默认通过 Tailscale 内网服务进行 MinerU PDF 解析与 bge-m3 embedding，原件、解析结果和数据库保存在本机 `D:\data\researchwiki-investment`。纯本地模式另需 uv；将 `sharedApi.enabled` 设为 `false` 后使用 CPU，有 NVIDIA GPU 时可将 `mineruDevice` 改为 `cuda`。
 
 ```powershell
 git clone https://github.com/nnquant/ResearchWiki.git
@@ -26,10 +26,11 @@ cd ResearchWiki
 git switch investment
 Copy-Item config.example.json config.json
 # 按需编辑 config.json
+# 内网模式：将管理员提供的个人密钥存入数据目录 runtime/shared-api-key，或设置 QUANT_API_KEY
 pwsh -File scripts/install.ps1
 ```
 
-安装脚本下载固定版本的 GBrain、安装 Node / Python 依赖、构建前端、启动数据库与 embedding 服务并初始化 Wiki。首次运行需要下载模型。
+安装脚本下载固定版本的 GBrain、安装 Node 依赖、构建前端、启动数据库并初始化 Wiki。内网模式不安装本机 MinerU、不下载模型或启动 Ollama；纯本地模式才安装 Python 依赖并下载模型。
 
 访问 <http://127.0.0.1:8018>。后续启动和停止：
 
@@ -40,7 +41,28 @@ pwsh -File scripts/stop.ps1
 
 默认仅监听本机。数据库密码由 setup 脚本生成，保存在数据目录的 `runtime/compose.env`。本地 `config.json`、数据、密钥、依赖和构建产物不纳入版本管理。IMA 需自行安装对应适配器并配置路径与知识库。
 
-安装、启动、停止脚本通过 `scripts/deployment.ps1` 读取 `config.json` 中的数据目录和端口。默认 Wiki / MCP / PostgreSQL / Ollama 端口分别为 8018 / 3131 / 5436 / 11435；多实例部署应同时区分 `dataRoot`、`deploymentName` 和这些端口。CPU 解析较慢，首次使用需要下载模型。
+安装、启动、停止脚本通过 `scripts/deployment.ps1` 读取 `config.json` 中的数据目录和端口。默认 Wiki / MCP / PostgreSQL / 本机 Ollama 端口分别为 8018 / 3131 / 5436 / 11435；多实例部署应同时区分 `dataRoot`、`deploymentName` 和这些端口。
+
+## 内网 GPU 服务
+
+`sharedApi.baseUrl` 默认是 `http://jiangda-pc.tail916afd.ts.net:8019`，必须使用完整域名，设备需有 Tailscale 访问权限。密钥从 `QUANT_API_KEY` 或 `sharedApi.apiKeyFile` 指向的纯文本文件读取；相对路径以数据目录为基准。启动脚本也会读取 Windows 用户级 `QUANT_API_KEY`。密钥仅由后端使用，不能提交到 Git。
+
+PDF 以原始二进制上传，远端排队解析后下载 ZIP，保留 Markdown、图片、文件页码与内容块。每份最多 100 MiB / 500 页。任务 ID 保存在该文献解析目录的 `remote-job.json`，断线后复用任务；提交结果不确定时停止自动重传，需请管理员查找任务并填写该文件的 `id`。远端失败的任务同样保留 ID，不会被目录监听反复上传。排障后如确需重做，先确认原任务已终止，再归档该任务记录。已解析的资料无需重新上传。
+
+GBrain 继续使用 `ollama:bge-m3` / 1024 维模型标识，HTTP 请求通过 Bearer 认证发送到内网 `/v1/embeddings`。内网不提供对话接口，文章 LLM 配置独立。兼容补丁将正文分块上限设为 1300 UTF-16 字符，预留标题与摘要上下文空间；所有请求另检查 2000 Unicode 字符上限、强制 float，超过限制时报错，不截断正文。GBrain 每批最多 16 段，遇到 429 等待 3 秒重试。关闭本机模型保温请求。
+
+首次将已有库切换到内网模式，停止 Wiki 后备份数据库，应用兼容补丁并重新分块、索引，再启动：
+
+```powershell
+node scripts/patch-gbrain.mjs
+node scripts/wiki.mjs gbrain reindex --markdown --no-embed --json
+node scripts/wiki.mjs index
+pwsh -File scripts/start.ps1
+# 验证模型；可额外传入一份 PDF 验证完整解析流程
+node scripts/verify-shared-api.mjs
+```
+
+切换后旧 Ollama 容器可用 `docker compose stop embeddings` 停用（需使用本实例的数据目录、环境文件和项目名）；无需删除模型或数据库。`sharedApi.enabled=false` 可恢复本机计算，再重启 Wiki/MCP。
 
 ## 开发与验证
 

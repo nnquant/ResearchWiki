@@ -16,23 +16,37 @@ npm run build
 if ($LASTEXITCODE -ne 0) { throw '前端构建失败' }
 & .\node_modules\bun\bin\bun.exe install --cwd vendor/gbrain --frozen-lockfile --ignore-scripts
 if ($LASTEXITCODE -ne 0) { throw 'GBrain 依赖安装失败' }
-$mineruPython = Join-Path $dataRoot 'runtime/mineru/Scripts/python.exe'
-if (-not (Test-Path -LiteralPath $mineruPython)) {
-    uv venv (Join-Path $dataRoot 'runtime/mineru') --python 3.12
-    if ($LASTEXITCODE -ne 0) { throw 'Python 环境创建失败' }
+node scripts/patch-gbrain.mjs
+if ($LASTEXITCODE -ne 0) { throw 'GBrain 兼容检查失败' }
+if (-not $wikiConfig.sharedApi.enabled) {
+    $mineruPython = Join-Path $dataRoot 'runtime/mineru/Scripts/python.exe'
+    if (-not (Test-Path -LiteralPath $mineruPython)) {
+        uv venv (Join-Path $dataRoot 'runtime/mineru') --python 3.12
+        if ($LASTEXITCODE -ne 0) { throw 'Python 环境创建失败' }
+    }
+    $requirements = if ($wikiConfig.mineruDevice -eq 'cuda') { 'requirements-mineru.txt' } else { 'requirements-mineru-cpu.txt' }
+    $torchIndex = if ($wikiConfig.mineruDevice -eq 'cuda') { 'https://download.pytorch.org/whl/cu128' } else { 'https://download.pytorch.org/whl/cpu' }
+    uv pip install --python $mineruPython -r $requirements --extra-index-url $torchIndex --index-strategy unsafe-best-match
+    if ($LASTEXITCODE -ne 0) { throw 'MinerU 安装失败' }
+    & (Join-Path $dataRoot 'runtime/mineru/Scripts/mineru-models-download.exe') --source $wikiConfig.mineruModelSource --model_type pipeline
+    if ($LASTEXITCODE -ne 0) { throw 'MinerU 模型下载失败' }
 }
-$requirements = if ($wikiConfig.mineruDevice -eq 'cuda') { 'requirements-mineru.txt' } else { 'requirements-mineru-cpu.txt' }
-$torchIndex = if ($wikiConfig.mineruDevice -eq 'cuda') { 'https://download.pytorch.org/whl/cu128' } else { 'https://download.pytorch.org/whl/cpu' }
-uv pip install --python $mineruPython -r $requirements --extra-index-url $torchIndex --index-strategy unsafe-best-match
-if ($LASTEXITCODE -ne 0) { throw 'MinerU 安装失败' }
-& (Join-Path $dataRoot 'runtime/mineru/Scripts/mineru-models-download.exe') --source $wikiConfig.mineruModelSource --model_type pipeline
-if ($LASTEXITCODE -ne 0) { throw 'MinerU 模型下载失败' }
-docker compose @composeArgs up -d --wait
+$composeServices = @(if ($wikiConfig.sharedApi.enabled) { 'postgres' } else { 'postgres'; 'embeddings' })
+docker compose @composeArgs up -d --wait @composeServices
 if ($LASTEXITCODE -ne 0) { throw '容器启动失败' }
-$model = $wikiConfig.embeddingModel -replace '^ollama:', ''
-Invoke-RestMethod "$($wikiConfig.ollamaUrl)/api/pull" -Method Post -ContentType application/json -Body (@{model=$model;stream=$false} | ConvertTo-Json) -TimeoutSec 3600 | Out-Null
+if ($wikiConfig.sharedApi.enabled) {
+    node scripts/verify-shared-api.mjs
+    if ($LASTEXITCODE -ne 0) { throw '内网服务验证失败' }
+} else {
+    $model = $wikiConfig.embeddingModel -replace '^ollama:', ''
+    Invoke-RestMethod "$($wikiConfig.ollamaUrl)/api/pull" -Method Post -ContentType application/json -Body (@{model=$model;stream=$false} | ConvertTo-Json) -TimeoutSec 3600 | Out-Null
+}
 node scripts/init-brain.mjs
 if ($LASTEXITCODE -ne 0) { throw 'GBrain 初始化失败' }
+if ($wikiConfig.sharedApi.enabled) {
+    node scripts/wiki.mjs gbrain reindex --markdown --no-embed --json
+    if ($LASTEXITCODE -ne 0) { throw '旧文献重新分块失败' }
+}
 node scripts/seed-wiki.mjs
 if ($LASTEXITCODE -ne 0) { throw 'Wiki 导航初始化失败' }
 node scripts/setup-mcp.mjs

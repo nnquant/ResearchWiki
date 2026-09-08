@@ -1,12 +1,17 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {manifest,manifestPath,dataPath,repo,run,atomicJson,assetUrl,withLock,slash} from './common.mjs';
+import {manifest,manifestPath,dataPath,repo,root,config,run,atomicJson,assetUrl,withLock,slash} from './common.mjs';
+import { sharedConnection, createSharedClient } from './shared-api-client.mjs';
 await withLock(async()=>{
  const m=await manifest();
  for(const doc of Object.values(m.documents).filter(x=>x.parser==='MinerU')) {
    const out=dataPath('parsed',doc.id,doc.revision);
-   await run(dataPath('runtime','mineru','Scripts','python.exe'),[path.join(repo,'scripts','parse_pdf.py'),dataPath(doc.raw_path),out,'--pages-only']);
    const md=dataPath(doc.parsed_path),paged=path.join(path.dirname(md),'pages.md');
+   if (!(await fs.access(paged).then(()=>true,()=>false))) {
+     const shared = sharedConnection(config, root);
+     if (shared) await createSharedClient(shared).parsePdf(await fs.readFile(dataPath(doc.raw_path)),out);
+     else await run(dataPath('runtime','mineru','Scripts','python.exe'),[path.join(repo,'scripts','parse_pdf.py'),dataPath(doc.raw_path),out,'--pages-only']);
+   }
    let text=await fs.readFile(paged,'utf8');
    text=text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g,(_,alt,target)=>`![${alt}](${assetUrl(path.resolve(path.dirname(md),target))})`);
    const file=dataPath('wiki',doc.wiki_slug+'.md'),old=await fs.readFile(file,'utf8');

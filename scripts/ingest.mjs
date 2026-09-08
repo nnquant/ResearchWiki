@@ -9,6 +9,7 @@ import { root,repo,config,dataPath,sha,now,safeName,atomicJson,readJson,manifest
 import { ima,findKnowledgeBase,listKnowledge } from './ima.mjs';
 import { normalizeArticleMetadata } from './article-metadata.mjs';
 import { readPage, writePage, invalidateScan } from './server/wiki-files.mjs';
+import { sharedConnection, createSharedClient } from './shared-api-client.mjs';
 
 export function isPrivateIp(ip) {
   if(ip.includes(':')) {
@@ -110,7 +111,13 @@ export async function parseRecord(record,{mineruVramGB}={}) {
     if(bytes.subarray(0,5).toString()==='%PDF-') {
       const command=dataPath('runtime','mineru','Scripts','python.exe');
       const parsedAlready=record.parser==='MinerU'&&record.parsed_path&&await fs.access(dataPath(record.parsed_path)).then(()=>true,()=>false);
-      if(!parsedAlready)await run(command,[path.join(repo,'scripts','parse_pdf.py'),raw,out,'--backend',config.mineruBackend,'--device',config.mineruDevice],{env:{...runtimeEnv(),...(mineruVramGB?{MINERU_VIRTUAL_VRAM_SIZE:String(mineruVramGB)}:{})},timeout:3600000,logFile:dataPath('logs',`mineru-${record.id}.log`)});
+      if(!parsedAlready) {
+        const shared = sharedConnection(config, root);
+        if (shared) {
+          const remote = await createSharedClient(shared).parsePdf(bytes, out);
+          record.remote_parser = { baseUrl: remote.baseUrl, job_id: remote.id };
+        } else await run(command,[path.join(repo,'scripts','parse_pdf.py'),raw,out,'--backend',config.mineruBackend,'--device',config.mineruDevice],{env:{...runtimeEnv(),...(mineruVramGB?{MINERU_VIRTUAL_VRAM_SIZE:String(mineruVramGB)}:{})},timeout:3600000,logFile:dataPath('logs',`mineru-${record.id}.log`)});
+      }
       const candidates=(await filesBelow(out)).filter(x=>x.endsWith('.md')&&!x.endsWith(`${path.sep}pages.md`));
       if(candidates.length!==1)throw new Error(`MinerU 应输出一份 Markdown，实际 ${candidates.length} 份`);
       md=candidates[0];body=await fs.readFile(path.join(path.dirname(md),'pages.md'),'utf8');
