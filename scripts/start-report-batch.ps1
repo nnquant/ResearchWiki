@@ -6,7 +6,8 @@ param(
     [int]$ToMonth = 5,
     [int]$BatchSize = 5,
     [switch]$RetryFailed,
-    [switch]$ParseOnly
+    [switch]$ParseOnly,
+    [ValidateRange(1,4)][int]$Concurrency = 1
 )
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\deployment.ps1"
@@ -19,6 +20,11 @@ if (-not $PSBoundParameters.ContainsKey('ParseOnly') -and (Test-Path -LiteralPat
     $savedWorker = Get-Content -LiteralPath $workerState -Raw | ConvertFrom-Json
     $ParseOnly = $savedWorker.mode -eq 'parse_only'
 }
+if (-not $PSBoundParameters.ContainsKey('Concurrency') -and (Test-Path -LiteralPath $workerState)) {
+    $savedWorker = Get-Content -LiteralPath $workerState -Raw | ConvertFrom-Json
+    if ($savedWorker.concurrency) { $Concurrency = [int]$savedWorker.concurrency }
+}
+if (-not $ParseOnly) { $Concurrency = 1 }
 $workerFile = Join-Path $batchDir 'worker.lock'
 $batchScript = Join-Path $repoRoot 'scripts\import-report-batch.mjs'
 if (Test-Path -LiteralPath $workerFile) {
@@ -45,8 +51,9 @@ if ($LASTEXITCODE -ne 0) { throw 'GBrain 兼容检查失败' }
 $workerArgs = @(('"' + $batchScript + '"'), '--source', ('"' + $Source + '"'), '--output', ('"' + $Output + '"'), '--year', [string]$Year, '--from-month', [string]$FromMonth, '--to-month', [string]$ToMonth, '--batch-size', [string]$BatchSize)
 if ($RetryFailed) { $workerArgs += '--retry-failed' }
 if ($ParseOnly) { $workerArgs += '--parse-only' }
+$workerArgs += @('--concurrency', [string]$Concurrency)
 $worker = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList $workerArgs -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $batchDir 'worker.stdout.log') -RedirectStandardError (Join-Path $batchDir 'worker.stderr.log') -PassThru
-@{pid=$worker.Id;source=$Source;output=$Output;mode=$(if ($ParseOnly) { 'parse_only' } else { 'index' });started_at=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $batchDir 'worker.json') -Encoding utf8
+@{pid=$worker.Id;source=$Source;output=$Output;mode=$(if ($ParseOnly) { 'parse_only' } else { 'index' });concurrency=$Concurrency;started_at=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $batchDir 'worker.json') -Encoding utf8
 $started = $false
 for ($attempt=0; $attempt -lt 20; $attempt++) {
     $worker.Refresh()

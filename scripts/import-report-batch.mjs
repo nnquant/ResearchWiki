@@ -52,8 +52,15 @@ export async function exportProcessed(plan, item, record, { parseOnly = false } 
   return target;
 }
 
-export async function runReportBatch(plan, { limit = Infinity, batchSize = 5, retryFailed = false, parseOnly = false } = {}) {
+// Drain every in-flight task even if one fails, before releasing the shared ingest lock.
+export async function drainParseGroup(items, parse, complete) {
+  const results = await Promise.allSettled(items.map(async item => complete(item, await parse(item))));
+  return results;
+}
+
+export async function runReportBatch(plan, { limit = Infinity, batchSize = 5, retryFailed = false, parseOnly = false, concurrency = 1 } = {}) {
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 20 || !(limit > 0)) throw new Error('无效的批次大小或处理数量');
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4 || (!parseOnly && concurrency !== 1)) throw new Error('并发数须为 1–4；多路并发仅用于只解析模式');
   const client = createSharedClient(sharedConnection(config, root) ?? (() => { throw new Error('报告批次要求已启用内网服务'); })());
   const dir = path.join(plan.output, '_batch');
   await ensureDirs(); await fs.mkdir(dir, { recursive: true });
@@ -70,6 +77,8 @@ export async function runReportBatch(plan, { limit = Infinity, batchSize = 5, re
     catch { await fs.writeFile(eventsFile, journal.slice(0, journal.lastIndexOf('\n') + 1)); }
   }
   let stopping = false, active = null, handled = 0, pending = [], failedIndexGroups = 0;
+  const activeItems = new Map();
+  let journalWrites = Promise.resolve();
   const stop = () => { stopping = true; };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
   const counts = () => {
@@ -84,11 +93,14 @@ export async function runReportBatch(plan, { limit = Infinity, batchSize = 5, re
     return out;
   };
   async function status(phase, extra = {}) {
-    await atomicJson(path.join(dir, 'status.json'), { pid: process.pid, phase, mode: parseOnly ? 'parse_only' : 'index', updated_at: now(), source: plan.source, output: plan.output, order: plan.order, months: plan.months, counts: counts(), active, ...extra });
+    await atomicJson(path.join(dir, 'status.json'), { pid: process.pid, phase, mode: parseOnly ? 'parse_only' : 'index', concurrency, updated_at: now(), source: plan.source, output: plan.output, order: plan.order, months: plan.months, counts: counts(), active, active_items: [...activeItems.values()], ...extra });
   }
   async function event(item, update) {
-    const entry = { ...states.get(item.id), id: item.id, relative: item.relative, order: item.order, ...update, updated_at: now() };
-    await fs.appendFile(eventsFile, JSON.stringify(entry) + '\n'); states.set(item.id, entry);
+    const write = journalWrites.then(async () => {
+      const entry = { ...states.get(item.id), id: item.id, relative: item.relative, order: item.order, ...update, updated_at: now() };
+      await fs.appendFile(eventsFile, JSON.stringify(entry) + '\n'); states.set(item.id, entry);
+    });
+    journalWrites = write.catch(() => {}); await write;
   }
   async function acquire(fn) {
     for (;;) {
@@ -127,8 +139,68 @@ export async function runReportBatch(plan, { limit = Infinity, batchSize = 5, re
     if (failedIndexGroups >= 3) throw new Error('连续三个小批次处理失败，批次已停止以便排障；已解析原件与队列均保留');
     active = null; await status('running');
   }
+  async function parseItem(item, byHash) {
+    const file = path.resolve(plan.source, item.relative);
+    if (!within(plan.source, file)) throw new Error('原件目录越界');
+    const before = await fs.stat(file);
+    if (before.size !== item.size || before.mtimeMs !== item.mtime_ms) throw new Error('原件自生成队列后发生变化，保留待人工核对');
+    if (before.size > 100 * 1024 * 1024) throw new Error('PDF 超过内网服务 100 MiB 上限');
+    const bytes = await fs.readFile(file), after = await fs.stat(file);
+    if (after.size !== before.size || after.mtimeMs !== before.mtimeMs || !completePdf(bytes)) throw new Error('PDF 不完整或仍在写入');
+    const hash = sha(bytes), known = byHash.get(hash);
+    if (known instanceof Promise) return known;
+    if (known && ['parsed','indexed'].includes(known.status)) return known;
+    const parsing = (async () => {
+      const existing = known || await capture({ bytes, filename: path.basename(file), title: path.basename(file, '.pdf'), source_kind: 'local', source_meta: { import_method: 'report-batch', import_path: file, batch_order: item.order, month_directory: item.month, sort_date: item.date, sort_date_source: item.date_source }, metadata: { document_type: '研报' } });
+      return parseRecord(existing, { skipArticleAnalysis: parseOnly });
+    })();
+    // Coalesce identical PDFs in this group before another task can submit the same bytes.
+    byHash.set(hash, parsing);
+    return parsing;
+  }
+  async function runParallelParsing() {
+    const queue = plan.files.filter(item => !reportCompleted(states.get(item.id), true) && (retryFailed || states.get(item.id)?.status !== 'failed')).slice(0, limit);
+    for (let offset = 0; offset < queue.length;) {
+      if (stopping || await fs.access(path.join(dir, 'pause')).then(() => true, () => false)) break;
+      try { await client.health(); }
+      catch (e) { await status('waiting_for_service', { detail: e.message }); await wait(30000); continue; }
+      const disk = await fs.statfs(plan.output);
+      if (disk.bavail * disk.bsize < 10 * 1024 ** 3) { await status('paused_disk', { detail: '输出磁盘可用空间低于 10 GiB' }); break; }
+      const group = queue.slice(offset, offset + concurrency).filter(item => item.month === queue[offset].month);
+      await acquire(async () => {
+        if (stopping || await fs.access(path.join(dir, 'pause')).then(() => true, () => false)) { stopping = true; return; }
+        const byHash = new Map(Object.values((await manifest()).documents).map(doc => [doc.sha256, doc]));
+        for (const item of group) {
+          activeItems.set(item.id, { order: item.order, relative: item.relative, month: item.month, report_date: item.date });
+          await event(item, { status: 'processing', attempts: (states.get(item.id)?.attempts ?? 0) + 1 });
+        }
+        await status('parsing');
+        const results = await drainParseGroup(group, item => parseItem(item, byHash), async (item, record) => {
+          await event(item, { status: 'parsed', document_id: record.id, wiki_slug: record.wiki_slug });
+          const exported = await exportProcessed(plan, item, record, { parseOnly: true });
+          await event(item, { status: 'completed', processing_mode: 'parse_only', document_id: record.id, wiki_slug: record.wiki_slug, output: exported, pages: record.pages, error: null });
+          activeItems.delete(item.id); await status('parsing');
+          console.log(JSON.stringify({ at: now(), status: 'completed', order: item.order, total: plan.total, title: record.title, pages: record.pages, counts: counts() }));
+        });
+        for (let i = 0; i < results.length; i++) {
+          if (results[i].status !== 'rejected') continue;
+          const item = group[i], error = results[i].reason?.message || String(results[i].reason);
+          await event(item, { status: 'failed', stage: 'parse-or-export', error });
+          await fs.appendFile(path.join(dir, 'failures.jsonl'), JSON.stringify({ at: now(), relative: item.relative, stage: 'parse-or-export', error }) + '\n');
+          activeItems.delete(item.id);
+        }
+        await status('running');
+      });
+      if (stopping) break;
+      offset += group.length;
+    }
+    const result = counts();
+    await status(result.pending === 0 ? (result.failed ? 'completed_with_failures' : 'completed') : 'paused');
+    return result;
+  }
   try {
     await status('starting');
+    if (parseOnly && concurrency > 1) return await runParallelParsing();
     const catalogue = await manifest();
     const byHash = new Map(Object.values(catalogue.documents).map(doc => [doc.sha256, doc]));
     for (const item of plan.files) {
@@ -199,6 +271,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const source = option('--source', 'D:/data/reports/raw'), output = option('--output', 'D:/data/reports/processed');
     const plan = await loadOrCreatePlan({ source, output, year: Number(option('--year', 2026)), fromMonth: Number(option('--from-month', 9)), toMonth: Number(option('--to-month', 5)) });
     if (args.includes('--plan')) console.log(JSON.stringify({ ...plan, files: plan.files.slice(0, 8) }, null, 2));
-    else await runReportBatch(plan, { limit: Number(option('--limit', Infinity)), batchSize: Number(option('--batch-size', 5)), retryFailed: args.includes('--retry-failed'), parseOnly: args.includes('--parse-only') });
+    else await runReportBatch(plan, { limit: Number(option('--limit', Infinity)), batchSize: Number(option('--batch-size', 5)), retryFailed: args.includes('--retry-failed'), parseOnly: args.includes('--parse-only'), concurrency: Number(option('--concurrency', 1)) });
   } catch (e) { console.error(e.message); process.exitCode = 1; }
 }

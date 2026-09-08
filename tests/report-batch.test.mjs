@@ -32,6 +32,26 @@ test('journal resumes latest state, tolerates an interrupted final append, rejec
   assert.throws(() => readEvents('{invalid}\n{"id":"a"}\n'));
 });
 
+test('parallel parse group exports early results and drains siblings after failure', async () => {
+  process.env.WIKI_DATA_ROOT = path.join(folder, 'wiki-data');
+  const { drainParseGroup } = await import('../scripts/import-report-batch.mjs');
+  const started = [], exported = [], gates = [];
+  let finished = false;
+  const running = drainParseGroup([1,2,3,4], item => {
+    started.push(item);
+    return new Promise((resolve,reject) => gates.push({ resolve,reject }));
+  }, async (item, record) => exported.push([item,record])).then(result => { finished = true; return result; });
+  assert.deepEqual(started, [1,2,3,4]);
+  gates[1].resolve('second'); gates[0].reject(new Error('remote failure'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(exported, [[2,'second']]);
+  assert.equal(finished, false);
+  gates[3].resolve('fourth'); gates[2].resolve('third');
+  const results = await running;
+  assert.deepEqual(results.map(r => r.status), ['rejected','fulfilled','fulfilled','fulfilled']);
+  assert.equal(exported.length, 3);
+});
+
 test('processed export preserves originals, relative assets and a final completion record', async () => {
   const data = path.join(folder, 'wiki-data');
   process.env.WIKI_DATA_ROOT = data;
