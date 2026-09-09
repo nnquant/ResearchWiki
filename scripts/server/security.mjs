@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { config } from '../common.mjs';
 import { HttpError } from './errors.mjs';
+import { allowedRequestHosts } from './allowed-hosts.mjs';
 
 /** Per-process CSRF token; the SPA reads it from /api/status and echoes it in x-wiki-token. */
 export const csrfToken = randomBytes(24).toString('hex');
 
-const allowedHosts = [`127.0.0.1:${config.port}`, `localhost:${config.port}`];
+const allowedHosts = allowedRequestHosts(config);
 const allowedOrigins = allowedHosts.map(host => `http://${host}`);
 
 const CSP = [
@@ -28,7 +29,7 @@ export function securityHeaders(res) {
 }
 
 export function assertHost(req) {
-  if (!allowedHosts.includes(req.headers.host)) throw new HttpError(403, '不接受此 Host');
+  if (!allowedHosts.includes(req.headers.host?.toLowerCase())) throw new HttpError(403, '不接受此 Host');
 }
 
 export function assertOrigin(req) {
