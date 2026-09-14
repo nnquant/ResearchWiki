@@ -1,0 +1,5 @@
+{
+  "name": "investment",
+  "metadataAdapter": "../investment/query-metadata.mjs",
+  "webTypeField": "research_category"
+}
