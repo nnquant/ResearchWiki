@@ -10,7 +10,7 @@ export async function createShareGuide({ baseUrl, token, outputDir, downloadBase
   if (!token?.trim()) throw new Error('没有可分发的只读凭据');
   baseUrl = url.href.replace(/\/$/, '');
   const files = {};
-  for (const file of ['scripts/agent/client.mjs', 'scripts/agent/cli.mjs', 'scripts/agent/tools.mjs', 'scripts/query/contract.mjs', 'scripts/server/errors.mjs']) {
+  for (const file of ['scripts/agent/client.mjs', 'scripts/agent/cli.mjs', 'scripts/agent/tools.mjs', 'scripts/query/contract.mjs', 'scripts/server/errors.mjs', 'config/query-fields.json']) {
     files['client/' + file] = await fs.readFile(path.join(repo, file), 'utf8');
   }
   const original = await fs.readFile(path.join(repo, 'skills/researchwiki/SKILL.md'), 'utf8');
@@ -19,6 +19,7 @@ export async function createShareGuide({ baseUrl, token, outputDir, downloadBase
     .replaceAll('node scripts/agent/cli.mjs', 'node "__RESEARCHWIKI_SKILL_DIR__/scripts/research.mjs"')
     .replace('并给出 `npm run research:index` 的维护命令', '并通知知识库维护者重建索引');
   files['references/agent-access.md'] = await fs.readFile(path.join(repo, 'docs/agent-access.md'), 'utf8');
+  files['references/agent-access-migration.md'] = await fs.readFile(path.join(repo, 'docs/agent-access-migration.md'), 'utf8');
   files['scripts/research.mjs'] = `import fs from 'node:fs/promises';
 const connection = JSON.parse(await fs.readFile(new URL('../connection.json', import.meta.url), 'utf8'));
 process.env.RESEARCHWIKI_URL = connection.base_url;

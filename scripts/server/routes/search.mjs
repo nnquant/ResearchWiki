@@ -1,3 +1,4 @@
+import { queryProfile } from '../../query/profile.mjs';
 import { execute } from '../../query/service.mjs';
 import { combine, tagsFilter } from '../../query/contract.mjs';
 import { HttpError } from '../errors.mjs';
@@ -13,7 +14,7 @@ export function registerSearchRoutes(router) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new HttpError(400, 'limit 应在 1–50 之间');
     if (!Number.isInteger(offset) || offset < 0) throw new HttpError(400, 'offset 无效');
     const filters = combine(tagsFilter({ tags_all: url.searchParams.getAll('tags_all'), tags_any: url.searchParams.getAll('tags_any'), tags_none: url.searchParams.getAll('tags_none') }),
-      types.length ? { field: 'research_category', op: 'in', value: types } : null);
+      types.length ? { field: queryProfile.webTypeField, op: 'in', value: types } : null);
     const controller = new AbortController();
     const cancel = () => { if (!res.writableEnded) controller.abort(); }; res.once('close', cancel);
     try {

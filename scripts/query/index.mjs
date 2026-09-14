@@ -5,14 +5,13 @@ import { randomUUID } from 'node:crypto';
 import { root, manifest, dataPath } from '../common.mjs';
 import { getSql, closeDb } from '../server/db.mjs';
 import { normalizeSlug, typeForSlug, RELATION_FIELDS } from '../server/slugs.mjs';
-import { articleCategory } from '../article-category.mjs';
-import { withEntityTags } from '../article-entities.mjs';
-import { dateOnly, validDate } from '../research-schema.mjs';
+import { decorateMetadata, queryProfile } from './profile.mjs';
+import { dateOnly, validDate } from './dates.mjs';
 import { hash, makeBlocks } from './blocks.mjs';
 import { FIELDS, tokenText } from './contract.mjs';
 import { fileURLToPath } from 'node:url';
 
-const INDEX_VERSION = 'rq-index-1';
+const INDEX_VERSION = hash(JSON.stringify(['rq-index-2', queryProfile, FIELDS]));
 export async function safeFile(relative) {
   if (!relative || typeof relative !== 'string') return null;
   const candidate = path.resolve(root, relative);
@@ -47,12 +46,13 @@ async function wikiInventory() {
 }
 
 export function metadataFor(fm, doc = {}, slug = '') {
-  const combined = { ...(doc.article_metadata ?? {}), ...fm };
+  let combined = { ...(doc.article_metadata ?? {}), ...fm };
   const pageType = fm.type ?? (doc.id ? 'source' : typeForSlug(slug) ?? 'note');
-  const metadata = { ...combined, page_type: pageType, research_category: articleCategory(combined, pageType), status: doc.status ?? 'wiki',
+  combined = decorateMetadata(combined, pageType);
+  const metadata = { ...combined, page_type: pageType, research_category: combined.research_category ?? pageType, status: doc.status ?? 'wiki',
     ingested_at: doc.received_at ?? null, updated_at: fm.updated_at ?? doc.updated_at ?? null };
-  metadata.tags = withEntityTags(combined).tags;
-  metadata.tickers = [...new Set([...(Array.isArray(combined.tickers) ? combined.tickers : []), ...(combined.analyst_expectations ?? []).flatMap(x => x.ticker ? [x.ticker] : [])])];
+  metadata.tags = combined.tags ?? [];
+  metadata.tickers = combined.tickers ?? [];
   for (const [field, type] of Object.entries(FIELDS)) {
     if (type === 'array') metadata[field] = Array.isArray(metadata[field]) ? [...new Set(metadata[field].filter(x => typeof x === 'string' && x.trim()))] : [];
     else if (type === 'date') {

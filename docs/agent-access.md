@@ -2,6 +2,8 @@
 
 ResearchWiki 提供共享的条件查询、正文检索和版本化阅读服务。网页全文搜索、Agent CLI 与 MCP 使用同一服务；资料库支持相同的标签交集、并集、排除语义。
 
+接入层同时用于量化和投资研究部署。`config/query-profile.json` 选择业务适配，`config/query-fields.json` 定义统一字段。量化 main 保留 factor、strategy、experiment、hypothesis、dataset 等类型，可用 `page_type` 过滤并追溯 `tests`、`uses_dataset`、`derived_from` 关系。投资版分类及实体标签补全由独立适配器提供。分支与部署说明见 [迁移说明](agent-access-migration.md)。
+
 ## 远程机器接入（主要入口）
 
 知识库和查询索引只部署在服务端。远程 Agent 通过网络调用，不需要挂载知识库文件、连接 PostgreSQL，或安装解析器及模型。

@@ -1,12 +1,13 @@
 ---
 name: researchwiki
-description: 查询 ResearchWiki 投资研究知识库，按公司代码、领域标签、机构和日期寻找材料，检索正文并读取带版本和页码的原文证据。
+description: 查询 ResearchWiki 研究知识库，按研究类型、公司代码、领域标签、机构和日期寻找材料，检索正文并读取带版本和页码的原文证据。
 ---
 
 # ResearchWiki 研究材料接入
 
 优先使用已连接的 `research_*` MCP 工具。远程入口是服务端 `http(s)://<服务器>/mcp`（Streamable HTTP、Bearer 鉴权）；也可在轻量客户端目录运行 `node scripts/agent/cli.mjs`，通过 `RESEARCHWIKI_URL` 和 `RESEARCHWIKI_TOKEN_FILE`（或 `RESEARCHWIKI_TOKEN`）连接。CLI help 返回完整工具 schema，stdout 是 JSON。Skill 本身不建立连接；连接设置见 [接入说明](../../docs/agent-access.md)。远程 Agent 无需知识库文件、数据库或模型环境。
 
+- 量化研究可用 page_type 筛选 factor、strategy、experiment、hypothesis、dataset；用 related 追溯 uses_dataset、tests、derived_from 等真实关系。
 - 初次访问用 `research_describe` 查看真实能力和索引覆盖。
 - 401 表示凭据缺失或失效，429 按 Retry-After 退避；不要通过读取服务器私有配置或直连数据库绕过接入接口。不要在日志、URL 或回复中输出 token。
 - 原件 `raw_url` 是网络下载地址，下载请求仍需 Bearer；仅向管理员配置的知识库服务源发送凭据。`open_url=null` 表示未配置可达的网页阅读器，继续使用 `research_read`。provenance 中的路径是服务端来源记录，不是客户端磁盘路径。

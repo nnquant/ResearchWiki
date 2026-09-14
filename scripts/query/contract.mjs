@@ -1,13 +1,8 @@
+import fieldDefinitions from '../../config/query-fields.json' with { type: 'json' };
 import { HttpError } from '../server/errors.mjs';
 
 export const VERSION = 'research-query-v1';
-export const FIELDS = {
-  tags: 'array', tickers: 'array', companies: 'array', industries: 'array', subfields: 'array',
-  institutions: 'array', authors: 'array', aliases: 'array', markets: 'array', research_topics: 'array',
-  page_type: 'string', research_category: 'string', document_type: 'string', language: 'string',
-  research_stage: 'string', review_status: 'string', region: 'string', status: 'string',
-  published_at: 'date', data_as_of: 'date', ingested_at: 'date', updated_at: 'date',
-};
+export const FIELDS = Object.freeze(fieldDefinitions);
 export const OPS = ['eq', 'in', 'gte', 'lte', 'exists', 'contains_all', 'contains_any', 'contains_none'];
 export function fail(code, message, status = 400) { throw new HttpError(status, message, { code }); }
 export function object(value, name = 'request') {

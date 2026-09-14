@@ -1,5 +1,5 @@
 import { config, root } from '../common.mjs';
-import { sharedConnection } from '../shared-api-client.mjs';
+import { sharedConnection } from './embedding-connection.mjs';
 
 export async function embedQuery(query, signal) {
   const model = String(config.embeddingModel ?? 'ollama:bge-m3');

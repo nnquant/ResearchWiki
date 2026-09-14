@@ -75,6 +75,6 @@ export function listen() {
   server.once('close', () => agent?.close());
   const stopRefresh = startQueryRefresh();
   server.once('close', stopRefresh);
-  server.listen(config.port, config.host, () => console.log(`投资研究 Wiki: http://${config.host}:${config.port}`));
+  server.listen(config.port, config.host, () => console.log(`ResearchWiki: http://${config.host}:${config.port}`));
   return server;
 }

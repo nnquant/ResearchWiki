@@ -3,7 +3,8 @@ import { VERSION, FIELDS, keys, text, integer, strings, validateFilters, filterS
 import * as store from './store.mjs';
 import { embedQuery } from './embedding.mjs';
 import { hash } from './blocks.mjs';
-import { researchRelations } from '../research-schema.mjs';
+import { RELATION_FIELDS as researchRelations } from '../server/slugs.mjs';
+import { queryProfile } from './profile.mjs';
 import { assetUrl } from '../common.mjs';
 import { safeFile } from './index.mjs';
 
@@ -89,7 +90,7 @@ export async function execute(operation, input = {}, { signal } = {}) {
         const tags = await store.tagDictionary(run, { q, filters });
         return { ...base, total: tags.length, count_unit: 'distinct_document', results: tags.map(t => ({ ...t, tag_id: `tag:${hash(t.tag).slice(0, 24)}`, category: t.tag.split(/[:：]/).length > 1 ? t.tag.split(/[:：]/)[0] : null, provenance: 'unknown' })) };
       }
-      return { ...base, results: [{ operations: Object.keys(ALLOWED), fields: FIELDS, modes: ['lexical', 'hybrid', 'deep'],
+      return { ...base, results: [{ profile: queryProfile.name, operations: Object.keys(ALLOWED), fields: FIELDS, modes: ['lexical', 'hybrid', 'deep'],
         deep_capabilities: { increased_candidate_pool: true, llm_expansion: false, cross_encoder_reranking: false },
         tags: { dictionary: 'describe(section=tags)', resolve: 'resolve(kind=tag)', operators: ['contains_all', 'contains_any', 'contains_none'], provenance_filter: false },
         read: { views: ['metadata', 'outline', 'blocks'], locator: 'revision + block_id', pdf_page: '1-based physical page from parser markers' },

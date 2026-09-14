@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const files = ['scripts/agent/client.mjs', 'scripts/agent/cli.mjs', 'scripts/agent/mcp.mjs', 'scripts/agent/mcp-server.mjs', 'scripts/agent/verify.mjs',
-  'scripts/agent/tools.mjs', 'scripts/query/contract.mjs', 'scripts/server/errors.mjs', 'skills/researchwiki/SKILL.md', 'docs/agent-access.md'];
+  'scripts/agent/tools.mjs', 'scripts/query/contract.mjs', 'scripts/server/errors.mjs', 'config/query-fields.json', 'skills/researchwiki/SKILL.md', 'docs/agent-access.md', 'docs/agent-access-migration.md'];
 export async function packageAgent(destination = path.join(repo, 'outputs/researchwiki-agent')) {
   const target = path.resolve(destination);
   for (const file of files) {
