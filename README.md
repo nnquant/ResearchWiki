@@ -60,3 +60,7 @@ node scripts/wiki.mjs search "研究问题"
 ## 依赖
 
 GBrain 固定提交 `8c70f6255047a7647adb30b1d6333a48068d9fa5`，由安装脚本从 [garrytan/gbrain](https://github.com/garrytan/gbrain) 获取。另使用 MinerU、Defuddle、Ollama、pgvector 等依赖；第三方软件遵循各自许可证。仓库不包含文献原件、模型权重或个人研究数据。
+
+## Agent 查询与远程接入
+
+HTTP、MCP 和 CLI 共享条件查询、全文检索、版本阅读与标签组合。使用 `npm run research:index` 建立读索引、`node scripts/setup-mcp.mjs` 初始化本实例只读凭据。详见 [接入说明](docs/agent-access.md)。公共代码通过 `config/query-profile.json` 选择业务适配，字段契约位于 `config/query-fields.json`；main 默认量化研究。

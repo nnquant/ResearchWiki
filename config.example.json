@@ -20,5 +20,13 @@
     "pollSeconds": 60,
     "stableSeconds": 60,
     "maxAttempts": 3
+  },
+  "agent": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 8020,
+    "publicBaseUrl": "",
+    "wikiBaseUrl": "",
+    "maxConcurrent": 8
   }
 }

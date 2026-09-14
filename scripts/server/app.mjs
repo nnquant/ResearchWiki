@@ -12,6 +12,9 @@ import { registerStatusRoutes } from './routes/status.mjs';
 import { registerAssetRoutes } from './routes/assets.mjs';
 import { serveStatic } from './routes/static.mjs';
 import { startEmbeddingWarmer } from './search-service.mjs';
+import { registerResearchRoutes, isAgentReadRequest } from './routes/research.mjs';
+import { startQueryRefresh } from '../query/refresh.mjs';
+import { listenAgent } from '../agent/http.mjs';
 
 function sendJson(res, status, data) {
   res.setHeader('content-type', 'application/json; charset=utf-8');
@@ -32,6 +35,7 @@ export function createApp() {
   registerStatusRoutes(router);
   registerPageRoutes(router);
   registerSearchRoutes(router);
+  registerResearchRoutes(router);
   registerGraphRoutes(router);
   registerEditRoutes(router);
   registerIngestRoutes(router);
@@ -43,7 +47,7 @@ export function createApp() {
       assertHost(req);
       const url = new URL(req.url, `http://127.0.0.1:${config.port}`);
       assertOrigin(req);
-      if (MUTATING_METHODS.has(req.method)) assertCsrf(req);
+      if (MUTATING_METHODS.has(req.method) && !await isAgentReadRequest(req, url.pathname)) assertCsrf(req);
       const matched = router.match(req.method, url.pathname);
       if (matched) {
         const out = await matched.handler({ req, res, url, params: matched.params });
@@ -67,6 +71,10 @@ export function createApp() {
 
 export function listen() {
   const server = createApp();
-  server.listen(config.port, config.host, () => console.log(`量化研究 Wiki: http://${config.host}:${config.port}`));
+  const agent = listenAgent();
+  server.once('close', () => agent?.close());
+  const stopRefresh = startQueryRefresh();
+  server.once('close', stopRefresh);
+  server.listen(config.port, config.host, () => console.log(`ResearchWiki: http://${config.host}:${config.port}`));
   return server;
 }

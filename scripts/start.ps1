@@ -1,12 +1,13 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $repoRoot
-$dataRoot = 'D:\data\gbrain'
+$wikiConfig = Get-Content (Join-Path $repoRoot 'config.json') -Raw | ConvertFrom-Json
+$dataRoot = [IO.Path]::GetFullPath($wikiConfig.dataRoot, $repoRoot)
 docker compose --env-file "$dataRoot\runtime\compose.env" up -d
 if ($LASTEXITCODE -ne 0) { throw '数据库或 embedding 服务启动失败' }
 $env:GBRAIN_HOME = "$dataRoot\runtime"
 $env:GBRAIN_SOURCE = 'default'
-$env:OLLAMA_BASE_URL = 'http://127.0.0.1:11435/v1'
+$env:OLLAMA_BASE_URL = $wikiConfig.ollamaUrl.TrimEnd('/') + '/v1'
 $nodeExe = (Get-Command node.exe).Source
 $bunExe = Join-Path $repoRoot 'node_modules\bun\bin\bun.exe'
 $stateFile = "$dataRoot\state\services.json"
@@ -20,12 +21,12 @@ if (Test-Path $stateFile) {
 }
 if (-not $services.ContainsKey('wiki')) {
     if (-not (Test-Path (Join-Path $repoRoot 'web\dist\index.html'))) { throw '前端尚未构建，请先运行 npm run build' }
-    if (Get-NetTCPConnection -State Listen -LocalPort 8018 -ErrorAction SilentlyContinue) { throw '8018 端口已被其他进程占用' }
+    if (Get-NetTCPConnection -State Listen -LocalPort $wikiConfig.port -ErrorAction SilentlyContinue) { throw '8018 端口已被其他进程占用' }
     $wikiProc = Start-Process -FilePath $nodeExe -ArgumentList @((Join-Path $repoRoot 'scripts\wiki.mjs'),'serve') -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput "$dataRoot\logs\wiki.stdout.log" -RedirectStandardError "$dataRoot\logs\wiki.stderr.log" -PassThru
-    $services.wiki = @{pid=$wikiProc.Id;port=8018}
+    $services.wiki = @{pid=$wikiProc.Id;port=$wikiConfig.port}
 }
 if (-not $services.ContainsKey('mcp')) {
-    if (Get-NetTCPConnection -State Listen -LocalPort 3131 -ErrorAction SilentlyContinue) { throw '3131 端口已被其他进程占用' }
+    if (Get-NetTCPConnection -State Listen -LocalPort $wikiConfig.mcpPort -ErrorAction SilentlyContinue) { throw '3131 端口已被其他进程占用' }
     $adminTokenFile = Join-Path $dataRoot 'runtime\admin-token'
     if (-not (Test-Path -LiteralPath $adminTokenFile)) {
         $tokenBytes = [byte[]]::new(32)
@@ -36,13 +37,14 @@ if (-not $services.ContainsKey('mcp')) {
     # The Wiki 前端通过 MCP 做检索；默认 30 次/分钟的限速对本机交互式搜索太低。仅监听 127.0.0.1。
     $env:GBRAIN_HTTP_RATE_LIMIT_IP = '600'
     $env:GBRAIN_HTTP_RATE_LIMIT_TOKEN = '600'
-    $mcpProc = Start-Process -FilePath $bunExe -ArgumentList @((Join-Path $repoRoot 'vendor\gbrain\src\cli.ts'),'serve','--http','--port','3131','--bind','127.0.0.1','--surface','starter') -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput "$dataRoot\logs\mcp.stdout.log" -RedirectStandardError "$dataRoot\logs\mcp.stderr.log" -PassThru
+    $mcpProc = Start-Process -FilePath $bunExe -ArgumentList @((Join-Path $repoRoot 'vendor\gbrain\src\cli.ts'),'serve','--http','--port',([string]$wikiConfig.mcpPort),'--bind','127.0.0.1','--surface','starter') -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput "$dataRoot\logs\mcp.stdout.log" -RedirectStandardError "$dataRoot\logs\mcp.stderr.log" -PassThru
     Remove-Item Env:\GBRAIN_ADMIN_BOOTSTRAP_TOKEN
     Remove-Item Env:\GBRAIN_HTTP_RATE_LIMIT_IP
     Remove-Item Env:\GBRAIN_HTTP_RATE_LIMIT_TOKEN
-    $services.mcp = @{pid=$mcpProc.Id;port=3131}
+    $services.mcp = @{pid=$mcpProc.Id;port=$wikiConfig.mcpPort}
 }
 $services | ConvertTo-Json -Depth 5 | Set-Content $stateFile -Encoding utf8
-Write-Host 'Wiki: http://127.0.0.1:8018'
-Write-Host 'MCP:  http://127.0.0.1:3131/mcp'
+Write-Host "Wiki: http://127.0.0.1:$($wikiConfig.port)"
+Write-Host "MCP: http://127.0.0.1:$($wikiConfig.mcpPort)/mcp"
+& (Join-Path $PSScriptRoot 'agent/wait-ready.ps1')
 & (Join-Path $PSScriptRoot 'start-import-watch.ps1')
