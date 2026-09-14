@@ -22,6 +22,9 @@ export function registerPageRoutes(router) {
     const filters = {
       type,
       tag: url.searchParams.get('tag') || null,
+      tags_all: url.searchParams.getAll('tags_all'),
+      tags_any: url.searchParams.getAll('tags_any'),
+      tags_none: url.searchParams.getAll('tags_none'),
       status: url.searchParams.get('status') || null,
       q: (url.searchParams.get('q') ?? '').trim().slice(0, 200) || null,
       sort: url.searchParams.get('sort') || 'updated',

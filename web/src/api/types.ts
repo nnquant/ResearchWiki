@@ -104,6 +104,11 @@ export interface RawPage {
 }
 
 export interface SearchHit {
+  document_id?: string;
+  revision_id?: string;
+  evidence?: { block_id: string; pdf_page: number | null } | null;
+  citation_status?: string;
+  category?: string | null;
   slug: string;
   page_id: number | null;
   title: string;
@@ -119,8 +124,12 @@ export interface SearchHit {
 
 export interface SearchResponse {
   query: string;
-  mode: 'fast' | 'deep';
-  engine: 'mcp' | 'cli';
+  mode: 'fast' | 'deep' | 'lexical' | 'hybrid';
+  engine: 'mcp' | 'cli' | 'research-query';
+  next_cursor?: string | null;
+  query_plan?: Record<string, unknown>;
+  coverage?: { documents: number; text_ready: number; complete: boolean; vector_ready: number | null };
+  empty_reason?: string | null;
   latency_ms: number;
   degraded: { stage: string; reason?: string }[];
   results: SearchHit[];
