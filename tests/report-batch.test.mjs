@@ -5,6 +5,13 @@ import path from 'node:path';
 import { buildReportPlan, reportDate, readEvents, within, reportOutput } from '../scripts/report-batch-plan.mjs';
 
 const folder = path.resolve('work', `report-batch-tests-${process.pid}`);
+test('classified exports label originals and reject unsafe category filenames', async () => {
+  process.env.WIKI_DATA_ROOT = path.join(folder, 'wiki-data');
+  const { reportOriginalName } = await import('../scripts/import-report-batch.mjs');
+  assert.equal(reportOriginalName({}), 'original.pdf');
+  assert.equal(reportOriginalName({ report_category: '内资' }), '内资_original.pdf');
+  assert.throws(() => reportOriginalName({ report_category: '../内资' }), /无效/);
+});
 test.after(() => fs.rm(folder, { recursive: true, force: true }));
 test('plan includes selected month folders only and orders by report date instead of download time', async () => {
   const source = path.join(folder, 'raw'), output = path.join(folder, 'processed');
@@ -83,6 +90,11 @@ test('processed export preserves originals, relative assets and a final completi
   assert.equal(parseReport.status, 'parsed');
   assert.equal(parseReport.wiki_url, null);
   assert.deepEqual(await fs.readFile(path.join(parseOut, 'original.pdf')), original);
+  const classifiedOut = await exportProcessed({ ...plan, report_category: '内资' }, { ...item, output_relative: '内资/report--id' }, record, { parseOnly: true });
+  assert.deepEqual(await fs.readFile(path.join(classifiedOut, '内资_original.pdf')), original);
+  const classifiedReport = JSON.parse(await fs.readFile(path.join(classifiedOut, 'report.json'), 'utf8'));
+  assert.equal(classifiedReport.report_category, '内资');
+  assert.equal(classifiedReport.original_file, '内资_original.pdf');
   // A later indexing run must revisit parse-only completions, but never reparse them.
   const parsedEntry = { status: 'completed', processing_mode: 'parse_only' };
   assert.equal(reportCompleted(parsedEntry, true), true);

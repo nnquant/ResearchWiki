@@ -52,6 +52,12 @@ export async function ensureDirs() {
 }
 export async function withLock(fn) {
   await ensureDirs();
+  const priority=await readJson(dataPath('state','ingest-priority.json'),null).catch(e=>{if(e instanceof SyntaxError)return {pid:null};throw e;});
+  if(priority && priority.pid!==process.pid) {
+    let active=true;
+    if(Number.isInteger(priority.pid)){try{process.kill(priority.pid,0);}catch(e){if(e.code==='ESRCH')active=false;}}
+    if(active)throw new Error(`已有导入任务占用锁（PID ${priority.pid ?? '正在登记'}，等待完成文章入库）。`);
+  }
   const file = dataPath('state', 'ingest.lock');
   let handle;
   try { handle = await fs.open(file, 'wx'); }
@@ -62,6 +68,22 @@ export async function withLock(fn) {
   }
   try { await handle.writeFile(JSON.stringify({pid:process.pid, started_at:now()})); return await fn(); }
   finally { await handle.close(); await fs.unlink(file); }
+}
+/** Reserve the next ingest slot so continuously running PDF groups cannot starve indexing. */
+export async function withIngestPriority(fn) {
+  await ensureDirs();
+  const file=dataPath('state','ingest-priority.json');let handle;
+  try {handle=await fs.open(file,'wx');}
+  catch(e) {
+    if(e.code!=='EEXIST')throw e;
+    const owner=await readJson(file,null);
+    let alive=true;
+    if(Number.isInteger(owner?.pid)){try{process.kill(owner.pid,0);}catch(error){if(error.code==='ESRCH')alive=false;}}
+    if(alive)throw new Error(`已有导入任务占用锁（PID ${owner?.pid ?? '未知'}，文章入库等待中）。`);
+    await fs.unlink(file);handle=await fs.open(file,'wx');
+  }
+  try {await handle.writeFile(JSON.stringify({pid:process.pid,started_at:now()}));return await fn();}
+  finally {await handle.close();await fs.unlink(file);}
 }
 export function runtimeEnv() {
   const shared = sharedConnection(config, root);

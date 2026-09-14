@@ -8,10 +8,15 @@
     "institutions": { "title": "机构", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
     "doi": { "title": "DOI", "type": ["string", "null"], "maxLength": 500 },
     "arxiv_id": { "title": "arXiv ID", "type": ["string", "null"], "maxLength": 100 },
-    "abstract": { "title": "摘要", "type": ["string", "null"], "maxLength": 20000 },
+    "summary": { "title": "中文摘要", "type": ["string", "null"], "maxLength": 10000 },
+    "abstract": { "title": "原文摘要", "type": ["string", "null"], "maxLength": 20000 },
     "language": { "title": "语言", "type": ["string", "null"], "maxLength": 100 },
     "asset_classes": { "title": "资产类别", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
     "markets": { "title": "市场", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "companies": { "title": "涉及公司", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "industries": { "title": "涉及行业", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "subfields": { "title": "细分领域", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "analyst_expectations": { "title": "分析师预期", "type": ["array", "null"], "items": { "$ref": "#/$defs/expectation" }, "maxItems": 10 },
     "research_topics": { "title": "研究主题", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
     "research_question": { "title": "核心问题", "type": ["string", "null"], "maxLength": 10000 },
     "strategy_frequency": { "title": "策略频率", "type": ["string", "null"], "maxLength": 500 },
@@ -25,9 +30,58 @@
     "reproducible_experiments": { "title": "可复现实验", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
     "personal_rating": { "title": "个人评分", "type": ["number", "null"], "minimum": 0, "maximum": 5 },
     "document_type": { "title": "文献分类", "type": ["string", "null"], "maxLength": 100 },
+    "research_category": { "title": "研究分类", "type": ["string", "null"], "enum": [null, "company", "industry", "macro", "theme", "event", "valuation", "meeting", "strategy", "source"] },
     "tags": { "title": "标签", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
     "aliases": { "title": "别名", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
     "published_at": { "title": "发布日期", "type": ["string", "null"], "format": "date" },
     "review_status": { "title": "阅读状态", "type": ["string", "null"], "enum": [null, "unread", "unreviewed", "reviewed", "draft", "verified", "rejected"] }
+  },
+  "$defs": {
+    "proof": { "type": "object", "additionalProperties": false, "required": ["quote", "page"], "properties": {
+      "quote": { "type": "string", "minLength": 1, "maxLength": 1200 }, "page": { "type": ["integer", "null"], "minimum": 1 }
+    } },
+    "proofs": { "type": "array", "minItems": 1, "maxItems": 6, "items": { "$ref": "#/$defs/proof" } },
+    "rating": { "type": ["object", "null"], "additionalProperties": false, "required": ["evidence"], "properties": {
+      "label": { "type": ["string", "null"], "maxLength": 200 },
+      "previous_label": { "type": ["string", "null"], "maxLength": 200 },
+      "change": { "type": ["string", "null"], "enum": [null, "upgraded", "downgraded", "maintained", "initiated", "suspended"] },
+      "stance": { "type": ["string", "null"], "enum": [null, "bullish", "neutral", "bearish", "mixed", "not_rated"] },
+      "stance_basis": { "type": ["string", "null"], "enum": [null, "explicit_view", "rating_mapping"] },
+      "rationale": { "type": ["string", "null"], "maxLength": 1000 },
+      "evidence": { "$ref": "#/$defs/proofs" }
+    } },
+    "targetPrice": { "type": ["object", "null"], "additionalProperties": false, "required": ["value", "evidence"], "properties": {
+      "value": { "type": "string", "maxLength": 100 },
+      "currency": { "type": ["string", "null"], "maxLength": 40 },
+      "previous_value": { "type": ["string", "null"], "maxLength": 100 },
+      "horizon": { "type": ["string", "null"], "maxLength": 100 },
+      "implied_upside": { "type": ["string", "null"], "maxLength": 100 },
+      "valuation_basis": { "type": ["string", "null"], "maxLength": 1000 },
+      "evidence": { "$ref": "#/$defs/proofs" }
+    } },
+    "forecast": { "type": "object", "additionalProperties": false, "required": ["metric", "metric_label", "period", "value", "source", "evidence"], "properties": {
+      "metric": { "type": "string", "enum": ["revenue", "net_profit", "adjusted_net_profit", "eps", "adjusted_eps", "ebitda", "ebit", "operating_profit", "gross_margin", "operating_margin", "other"] },
+      "metric_label": { "type": "string", "maxLength": 120 },
+      "period": { "type": "string", "maxLength": 100 },
+      "value": { "type": "string", "maxLength": 100 },
+      "unit": { "type": ["string", "null"], "maxLength": 100 },
+      "currency": { "type": ["string", "null"], "maxLength": 40 },
+      "basis": { "type": ["string", "null"], "maxLength": 200 },
+      "source": { "type": "string", "enum": ["analyst", "consensus", "company_guidance"] },
+      "previous_value": { "type": ["string", "null"], "maxLength": 100 },
+      "evidence": { "$ref": "#/$defs/proofs" }
+    } },
+    "expectationNote": { "type": "object", "additionalProperties": false, "required": ["text", "evidence"], "properties": {
+      "text": { "type": "string", "maxLength": 1000 }, "evidence": { "$ref": "#/$defs/proofs" }
+    } },
+    "expectation": { "type": "object", "additionalProperties": false, "required": ["company", "evidence"], "properties": {
+      "company": { "type": "string", "maxLength": 250 }, "ticker": { "type": ["string", "null"], "maxLength": 100 },
+      "rating": { "$ref": "#/$defs/rating" }, "target_price": { "$ref": "#/$defs/targetPrice" },
+      "forecasts": { "type": ["array", "null"], "maxItems": 30, "items": { "$ref": "#/$defs/forecast" } },
+      "key_assumptions": { "type": ["array", "null"], "maxItems": 6, "items": { "$ref": "#/$defs/expectationNote" } },
+      "catalysts": { "type": ["array", "null"], "maxItems": 6, "items": { "$ref": "#/$defs/expectationNote" } },
+      "risks": { "type": ["array", "null"], "maxItems": 6, "items": { "$ref": "#/$defs/expectationNote" } },
+      "evidence": { "$ref": "#/$defs/proofs" }
+    } }
   }
 }

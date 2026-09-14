@@ -8,6 +8,8 @@ import matter from 'gray-matter';
 import { root,repo,config,dataPath,sha,now,safeName,atomicJson,readJson,manifest,manifestPath,run,runtimeEnv,gb,assetUrl,filesBelow,slash } from './common.mjs';
 import { ima,findKnowledgeBase,listKnowledge } from './ima.mjs';
 import { normalizeArticleMetadata } from './article-metadata.mjs';
+import { withEntityTags } from './article-entities.mjs';
+import {isCompanyReport} from './analyst-expectations.mjs';
 import { readPage, writePage, invalidateScan } from './server/wiki-files.mjs';
 import { sharedConnection, createSharedClient } from './shared-api-client.mjs';
 
@@ -82,7 +84,7 @@ async function saveRecord(record) {
   recordWrites=write.catch(()=>{});return write;
 }
 async function readArticle(record,body) {
-  const read=articleReads.then(async()=>{const {analyzeArticle}=await import('./article-llm.mjs');return analyzeArticle(record,body);});
+  const read=articleReads.then(async()=>{const {analyzeArticle}=await import('./article-llm.mjs');return analyzeArticle(record,body,{requireEntities:true,requireExpectations:isCompanyReport(record)});});
   articleReads=read.catch(()=>{});return read;
 }
 export async function capture({bytes,filename,title,source_kind='local',source_url=null,source_key,source_meta={},media_type,metadata={}}) {
@@ -147,7 +149,7 @@ export async function parseRecord(record,{mineruVramGB,skipArticleAnalysis=false
       const explicitTags=Object.hasOwn(record.article_metadata||{},'tags');
       record.article_metadata={...analysis.metadata,...record.article_metadata};
       if(!explicitTags)record.article_metadata.tags=[...new Set([record.source_kind,record.article_metadata.document_type??record.document_type,...(record.article_metadata.tags||[])].filter(Boolean))];
-      record.llm={status:'complete',mode:analysis.mode,model:analysis.model,completed_at:analysis.completed_at,segments:analysis.segments,report_path:analysis.report_path,input_sha256:analysis.input_sha256};
+    record.llm={status:'complete',mode:analysis.mode,model:analysis.model,completed_at:analysis.completed_at,segments:analysis.segments,report_path:analysis.report_path,input_sha256:analysis.input_sha256,...(analysis.entity_version?{entity_version:analysis.entity_version,entity_report_path:analysis.report_path,entity_completed_at:analysis.completed_at}:{}),...(analysis.expectations_version?{expectations_version:analysis.expectations_version,expectations_report_path:analysis.report_path,expectations_completed_at:analysis.completed_at}:{})};
       record.document_type=record.article_metadata.document_type??record.document_type;
     }
     // Rewrite only relative assets; parsed Markdown and source bytes remain untouched.
@@ -160,6 +162,7 @@ export async function parseRecord(record,{mineruVramGB,skipArticleAnalysis=false
       tags:[record.source_kind,record.document_type||({wechat:'公众号文章',x:'X 文章',web:'网页'}[record.source_kind])||'待分类'],
       ...(record.author?{authors:[record.author]}:{}),...record.article_metadata};
     if(fm.document_type && !Object.hasOwn(record.article_metadata||{},'tags'))fm.tags=[record.source_kind,fm.document_type];
+    fm.tags=withEntityTags(fm).tags;
     const header='---\n'+Object.entries(fm).map(([k,v])=>`${k}: ${JSON.stringify(v)}`).join('\n')+'\n---\n';
     const provenance=`# ${record.title}\n\n> 文献全文。接收时间：${record.received_at}；发布日期：${record.published_at||'待核实'}。\n\n[原始文件](${assetUrl(raw)}) · [解析 Markdown](${assetUrl(md)})${record.page_map?` · [页码与内容块](${assetUrl(dataPath(record.page_map))})`:''}\n\n---\n\n`;
     await fs.writeFile(dataPath('wiki',record.wiki_slug+'.md'),header+provenance+body,'utf8');
@@ -196,6 +199,9 @@ export async function updateArticleMetadata(idOrSlug,input) {
     fm.tags=[...new Set([...(fm.tags??[]).filter(t=>t!==page.frontmatter.document_type&&t!=='待分类'),...(patch.document_type?[patch.document_type]:[])])];
     merged.tags=fm.tags;
   }
+  fm.tags=withEntityTags(fm,page.frontmatter).tags;
+  if(!fm.tags.length && patch.tags===null)fm.tags=null;
+  merged.tags=fm.tags;
   await writePage(page.slug,matter.stringify('',fm).replace(/\n*$/,'\n')+page.body,{baseHash:page.hash});
   record.article_metadata=merged;
   record.metadata_removed_tags=[...new Set([...(record.metadata_removed_tags??[]),...(page.frontmatter.tags??[]).filter(t=>!(fm.tags??[]).includes(t))])].filter(t=>!(fm.tags??[]).includes(t));

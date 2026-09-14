@@ -7,6 +7,7 @@ import { capture, parseRecord, indexWiki } from './ingest.mjs';
 import { completePdf } from './import-directory.mjs';
 import { sharedConnection, createSharedClient } from './shared-api-client.mjs';
 import { getSql, closeDb } from './server/db.mjs';
+import { deduplicateFile, exportFile, exportTree } from './report-storage.mjs';
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 export async function loadOrCreatePlan(options) {
@@ -26,6 +27,13 @@ export function reportCompleted(entry, parseOnly) {
   return entry?.status === 'completed' && (parseOnly || entry.processing_mode !== 'parse_only');
 }
 
+export function reportOriginalName(plan) {
+  const category = plan.report_category;
+  if (!category) return 'original.pdf';
+  if (!/^[\p{L}\p{N}_-]{1,24}$/u.test(category)) throw new Error('无效的报告分类');
+  return `${category}_original.pdf`;
+}
+
 export async function exportProcessed(plan, item, record, { parseOnly = false } = {}) {
   const target = path.resolve(plan.output, item.output_relative);
   if (!within(plan.output, target)) throw new Error('输出目录越界');
@@ -35,13 +43,22 @@ export async function exportProcessed(plan, item, record, { parseOnly = false } 
   const raw = dataPath(record.raw_path);
   const bytes = await fs.readFile(raw);
   if (sha(bytes) !== record.sha256) throw new Error('入库原件哈希校验失败');
-  const pdf = path.join(target, 'original.pdf');
+  const source = path.resolve(plan.source, item.relative);
+  if (!within(plan.source, source)) throw new Error('原件目录越界');
+  const sourceExists = await fs.access(source).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
+  if (sourceExists) {
+    const linked = await deduplicateFile(source, raw, record.sha256);
+    if (linked.status === 'different_content') throw new Error('下载原件与入库原件不一致，拒绝导出');
+  }
+  const originalFile = reportOriginalName(plan);
+  const pdf = path.join(target, originalFile);
   try {
-    await fs.copyFile(raw, pdf, fs.constants.COPYFILE_EXCL);
+    await exportFile(raw, pdf);
   } catch (e) { if (e.code !== 'EEXIST' || sha(await fs.readFile(pdf)) !== record.sha256) throw e; }
   const parsed = dataPath('parsed', record.id, record.revision);
-  await fs.cp(parsed, path.join(target, 'parsed'), { recursive: true, force: true, errorOnExist: false });
+  await exportTree(parsed, path.join(target, 'parsed'));
   const report = {
+    ...(plan.report_category ? { report_category: plan.report_category, original_file: originalFile } : {}),
     status: parseOnly ? 'parsed' : 'indexed', completed_at: now(), source_relative: item.relative, source_file: path.join(plan.source, item.relative), original_filename: path.basename(item.relative),
     sha256: record.sha256, report_date_for_sort: item.date, date_source: item.date_source, month_directory: item.month,
     title: record.title, pages: record.pages, characters: record.characters, parser: record.parser, remote_parser: record.remote_parser,
