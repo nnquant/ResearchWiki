@@ -1,3 +1,4 @@
+import { MultiTagFilter, readTagSelection, writeTagSelection } from '../app/MultiTagFilter';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { usePages, useTypes, useTags } from '../api/hooks';
@@ -20,7 +21,8 @@ export function LibraryPage() {
   const type = params.get('type') ?? '';
   const title = type ? typeLabel(type) : '资料库';
   useCrumbs(type ? [{ label: '资料库', to: '/library' }, { label: title }] : [{ label: '资料库' }]);
-  const tag = params.get('tag') ?? '';
+  const selectedTags = readTagSelection(params);
+  const tag = JSON.stringify(selectedTags);
   const status = params.get('status') ?? '';
   const q = params.get('q') ?? '';
   const sort = params.get('sort') ?? 'updated';
@@ -32,7 +34,7 @@ export function LibraryPage() {
   const query = useMemo(() => {
     const p = new URLSearchParams();
     if (type) p.set('type', type);
-    if (tag) p.set('tag', tag);
+    writeTagSelection(p, JSON.parse(tag));
     if (status) p.set('status', status);
     if (q) p.set('q', q);
     p.set('sort', sort);
@@ -95,13 +97,8 @@ export function LibraryPage() {
           <option value="">全部状态</option>
           {Object.entries(STATUS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select>
-        {tags && tags.length > 0 && (
-          <select className="select" value={tag} onChange={e => update({ tag: e.target.value || null })} aria-label="标签">
-            <option value="">全部分类与标签</option>
-            {tags.map(t => <option key={t.tag} value={t.tag}>{t.tag} ({t.n})</option>)}
-          </select>
-        )}
-        {(type || tag || status || q) && <button className="btn ghost sm" onClick={() => setParams(new URLSearchParams())}>清除筛选</button>}
+        <MultiTagFilter tags={tags ?? []} value={selectedTags} onChange={value => { const next = new URLSearchParams(params); writeTagSelection(next, value); next.delete('page'); setParams(next); }} />
+        {(type || Object.values(selectedTags).some(v => v.length) || status || q) && <button className="btn ghost sm" onClick={() => setParams(new URLSearchParams())}>清除筛选</button>}
       </div>
 
       {isLoading && <Loading />}

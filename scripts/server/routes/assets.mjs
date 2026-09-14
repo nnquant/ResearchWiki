@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createReadStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { root, dataPath } from '../../common.mjs';
 import { HttpError } from '../errors.mjs';
 
@@ -32,6 +34,6 @@ export function registerAssetRoutes(router) {
       res.setHeader('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(real))}`);
     }
     res.writeHead(200);
-    res.end(await fs.readFile(real));
+    await pipeline(createReadStream(real), res);
   });
 }

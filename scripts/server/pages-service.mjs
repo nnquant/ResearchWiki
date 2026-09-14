@@ -1,3 +1,4 @@
+import { matchesTags } from '../query/contract.mjs';
 import fs from 'node:fs/promises';
 import { manifest, assetUrl, dataPath } from '../common.mjs';
 import * as db from './db.mjs';
@@ -92,7 +93,7 @@ export async function getIndex() {
 export function filterPageIndex(index, filters) {
   let items = index;
   if (filters.type?.length) items = items.filter(x => filters.type.includes(x.type));
-  if (filters.tag) items = items.filter(x => x.tags.includes(filters.tag));
+  items = items.filter(x => matchesTags(x.tags, { tags_all: [...(filters.tags_all ?? []), ...(filters.tag ? [filters.tag] : [])], tags_any: filters.tags_any ?? [], tags_none: filters.tags_none ?? [] }));
   if (filters.status) items = items.filter(x => x.review_status === filters.status);
   if (filters.q) {
     const q = filters.q.toLowerCase();
