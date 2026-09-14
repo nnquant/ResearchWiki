@@ -1,6 +1,7 @@
 import type { ResearchMetadata } from '../lib/research';
 
 export interface IndexEntry {
+  category?: string;
   research: ResearchMetadata;
   slug: string;
   title: string;
@@ -47,6 +48,7 @@ export interface Provenance {
   llm_processed_at?: string | null;
   raw_url: string | null;
   parsed_url: string | null;
+  translation_url: string | null;
   page_map_url: string | null;
   source_url: string | null;
   source_kind: string | null;
@@ -61,6 +63,7 @@ export interface Provenance {
 }
 
 export interface Page {
+  category?: string;
   research: ResearchMetadata;
   slug: string;
   title: string;
@@ -108,6 +111,11 @@ export interface RawPage {
 }
 
 export interface SearchHit {
+  document_id?: string;
+  revision_id?: string;
+  evidence?: { block_id: string; pdf_page: number | null } | null;
+  citation_status?: string;
+  category?: string | null;
   slug: string;
   page_id: number | null;
   title: string;
@@ -123,14 +131,19 @@ export interface SearchHit {
 
 export interface SearchResponse {
   query: string;
-  mode: 'fast' | 'deep';
-  engine: 'mcp' | 'cli';
+  mode: 'fast' | 'deep' | 'lexical' | 'hybrid';
+  engine: 'mcp' | 'cli' | 'research-query';
+  next_cursor?: string | null;
+  query_plan?: Record<string, unknown>;
+  coverage?: { documents: number; text_ready: number; complete: boolean; vector_ready: number | null };
+  empty_reason?: string | null;
   latency_ms: number;
   degraded: { stage: string; reason?: string }[];
   results: SearchHit[];
 }
 
 export interface PageListItem {
+  category?: string;
   research: ResearchMetadata;
   slug: string;
   title: string;

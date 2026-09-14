@@ -3,6 +3,14 @@
   "host": "127.0.0.1",
   "port": 8018,
   "mcpPort": 3131,
+  "agent": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 8020,
+    "publicBaseUrl": "",
+    "wikiBaseUrl": "",
+    "maxConcurrent": 8
+  },
   "imaSkill": "",
   "imaKnowledgeBase": "",
   "embeddingModel": "ollama:bge-m3",

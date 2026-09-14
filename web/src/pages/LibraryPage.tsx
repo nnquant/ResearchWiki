@@ -4,11 +4,12 @@ import { usePages, useTypes, useTags } from '../api/hooks';
 import { pageUrl } from '../api/client';
 import { useCrumbs } from '../app/UiContext';
 import { Loading, ErrorBlock, TypeBadge, StatusChip, Empty } from '../app/ui';
-import { TYPE_ORDER, STATUS_LABELS, typeLabel } from '../lib/types';
+import { TYPE_ORDER, STATUS_LABELS, categoryLabel } from '../lib/types';
 import { formatDate } from '../lib/format';
 import { isEditableTarget } from '../lib/hotkeys';
 import { RESEARCH_STAGES } from '../lib/research';
 import { useUi } from '../app/UiContext';
+import { MultiTagFilter, readTagSelection, writeTagSelection } from '../app/MultiTagFilter';
 
 const PAGE_SIZE = 50;
 
@@ -21,9 +22,11 @@ export function LibraryPage() {
   const [focus, setFocus] = useState(-1);
 
   const type = params.get('type') ?? '';
-  const title = type ? typeLabel(type) : '资料库';
+  const title = type ? categoryLabel(type) : '资料库';
   useCrumbs(type ? [{ label: '资料库', to: '/library' }, { label: title }] : [{ label: '资料库' }]);
   const tag = params.get('tag') ?? '';
+  const tagSelection = readTagSelection(params);
+  const tagsKey = JSON.stringify(tagSelection);
   const status = params.get('status') ?? '';
   const stage = params.get('stage') ?? '';
   const due = params.get('due') === 'true';
@@ -38,6 +41,7 @@ export function LibraryPage() {
     const p = new URLSearchParams();
     if (type) p.set('type', type);
     if (tag) p.set('tag', tag);
+    writeTagSelection(p, tagSelection);
     if (status) p.set('status', status);
     if (stage) p.set('stage', stage);
     if (due) p.set('due', 'true');
@@ -47,7 +51,7 @@ export function LibraryPage() {
     p.set('limit', String(PAGE_SIZE));
     p.set('offset', String((page - 1) * PAGE_SIZE));
     return p;
-  }, [type, tag, status, stage, due, q, sort, dir, page]);
+  }, [type, tag, tagsKey, status, stage, due, q, sort, dir, page]);
 
   const { data, isLoading, error, isFetching } = usePages(query);
   const items = data?.items ?? [];
@@ -95,8 +99,10 @@ export function LibraryPage() {
         <form onSubmit={e => { e.preventDefault(); update({ q: draft.trim() || null }); }}>
           <input className="input" value={draft} onChange={e => setDraft(e.target.value)} placeholder="标题、代码、别名或地区…" aria-label="筛选" />
         </form>
-        <select className="select" value={type} onChange={e => update({ type: e.target.value || null })} aria-label="类型">
-          <option value="">全部类型</option>
+        <MultiTagFilter tags={tags ?? []} value={tagSelection} onChange={value => { const next = new URLSearchParams(params); writeTagSelection(next, value); next.delete('page'); setParams(next); }} />
+        <button className="btn sm" onClick={() => { setDraft(''); setParams(new URLSearchParams()); }}>清除全部筛选</button>
+        <select className="select" value={type} onChange={e => update({ type: e.target.value || null })} aria-label="研究分类">
+          <option value="">全部研究分类</option>
           {orderedTypes.map(t => <option key={t.type} value={t.type}>{t.label} ({t.n})</option>)}
         </select>
         <select className="select" value={stage} onChange={e => update({ stage: e.target.value || null })} aria-label="研究阶段">
@@ -108,13 +114,6 @@ export function LibraryPage() {
           <option value="">全部状态</option>
           {Object.entries(STATUS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select>
-        {tags && tags.length > 0 && (
-          <select className="select" value={tag} onChange={e => update({ tag: e.target.value || null })} aria-label="标签">
-            <option value="">全部分类与标签</option>
-            {tags.map(t => <option key={t.tag} value={t.tag}>{t.tag} ({t.n})</option>)}
-          </select>
-        )}
-        {(type || tag || status || stage || due || q) && <button className="btn ghost sm" onClick={() => setParams(new URLSearchParams())}>清除筛选</button>}
       </div>
 
       {isLoading && <Loading />}
@@ -130,7 +129,7 @@ export function LibraryPage() {
             <thead>
               <tr>
                 <th><button className={sort === 'title' ? 'active' : ''} onClick={() => toggleSort('title')}>标题 {sort === 'title' ? (dir === 'asc' ? '↑' : '↓') : ''}</button></th>
-                <th><button className={sort === 'type' ? 'active' : ''} onClick={() => toggleSort('type')}>类型 {sort === 'type' ? (dir === 'asc' ? '↑' : '↓') : ''}</button></th>
+                <th><button className={sort === 'type' ? 'active' : ''} onClick={() => toggleSort('type')}>研究分类 {sort === 'type' ? (dir === 'asc' ? '↑' : '↓') : ''}</button></th>
                 <th>标签</th>
                 <th>状态</th>
                 <th>研究阶段 / 复核日</th>
@@ -145,8 +144,8 @@ export function LibraryPage() {
                     <Link to={pageUrl(item.slug)} onClick={e => e.stopPropagation()}>{item.title}</Link>
                     {item.excerpt && <span className="article-excerpt" title={item.excerpt}>{item.excerpt}</span>}
                   </td>
-                  <td><TypeBadge type={item.type} /></td>
-                  <td>{item.tags.map(t => <span key={t} className="chip" style={{ marginRight: 4 }}>{t}</span>)}</td>
+                  <td>{(item.category ?? item.type) === 'source' ? <span className="chip">待分类文献</span> : <TypeBadge type={item.category ?? item.type} />}</td>
+                  <td><div className="library-tags">{item.tags.map(t => <span key={t} className="chip">{t}</span>)}</div></td>
                   <td><StatusChip status={item.review_status} /></td>
                   <td><span className="small">{RESEARCH_STAGES[String(item.research?.research_stage) as keyof typeof RESEARCH_STAGES] ?? '—'}</span><div className="muted small">{String(item.research?.next_review ?? '')}</div></td>
                   <td className="date">{formatDate(item.updated_at)}</td>

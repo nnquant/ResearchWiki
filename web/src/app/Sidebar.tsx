@@ -19,7 +19,6 @@ export function Sidebar() {
     <aside className="sidebar">
       <Link to="/" className="brand">
         <span>ResearchWiki</span>
-        <small className="brand-edition">INVESTMENT</small>
       </Link>
       <button className="sidebar-search" onClick={() => openPalette()}>
         <span>搜索页面或内容…</span>

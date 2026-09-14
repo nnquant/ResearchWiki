@@ -5,7 +5,7 @@ import { useIndex, useSearch, useReindex } from '../api/hooks';
 import { pageUrl } from '../api/client';
 import { rankPages } from '../lib/fuzzy';
 import { Highlight, snippetAround } from '../lib/highlight';
-import { typeLabel } from '../lib/types';
+import { categoryLabel as typeLabel } from '../lib/types';
 import { TypeDot } from './ui';
 
 interface Item {
@@ -60,7 +60,7 @@ export function CommandPalette() {
       section: '页面',
       title: item.title,
       sub: item.slug,
-      type: item.type,
+      type: item.category ?? item.type,
       run: () => go(pageUrl(item.slug)),
     }));
     const content: Item[] = (remote.data?.results ?? []).map(hit => ({

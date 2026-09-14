@@ -17,3 +17,7 @@ __pycache__/
 
 /config/mcp.json
 /config/mineru-installed.txt
+
+# Generated handoff documents containing read credentials
+/outputs/private/
+/outputs/

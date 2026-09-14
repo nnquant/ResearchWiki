@@ -47,16 +47,27 @@ if (-not $services.ContainsKey('mcp')) {
 }
 $services | ConvertTo-Json -Depth 5 | Set-Content $stateFile -Encoding utf8
 $ready = $false
+$agentEnabled = $wikiConfig.agent.enabled -ne $false
+$agentPort = if ($wikiConfig.agent.port) { $wikiConfig.agent.port } else { $wikiConfig.port + 2 }
+$agentProbeHost = if ($wikiConfig.agent.host) { $wikiConfig.agent.host } else { $wikiConfig.host }
+if ($agentProbeHost -in @('0.0.0.0', '::')) { $agentProbeHost = '127.0.0.1' }
+if ($agentProbeHost.Contains(':')) { $agentProbeHost = "[$agentProbeHost]" }
 $readyDeadline = [DateTime]::UtcNow.AddSeconds(45)
 while ([DateTime]::UtcNow -lt $readyDeadline) {
     try {
         $mcpReady = Invoke-RestMethod "http://127.0.0.1:$($wikiConfig.mcpPort)/health" -TimeoutSec 2
         $wikiReady = Invoke-WebRequest "http://127.0.0.1:$($wikiConfig.port)/" -TimeoutSec 2
-        if ($mcpReady.status -eq 'ok' -and $wikiReady.StatusCode -eq 200) { $ready = $true; break }
+        $agentReady = -not $agentEnabled
+        if ($agentEnabled) {
+            $agentProbe = Invoke-WebRequest "http://${agentProbeHost}:$agentPort/health" -SkipHttpErrorCheck -TimeoutSec 2
+            $agentReady = $agentProbe.StatusCode -eq 401
+        }
+        if ($mcpReady.status -eq 'ok' -and $wikiReady.StatusCode -eq 200 -and $agentReady) { $ready = $true; break }
     } catch { }
     Start-Sleep -Milliseconds 500
 }
-if (-not $ready) { throw 'Wiki 或 MCP 未在 45 秒内就绪，请检查数据目录 logs' }
+if (-not $ready) { throw 'Wiki、Agent 或内部 MCP 未在 45 秒内就绪；升级已有进程后请使用 scripts/restart-wiki.ps1，并检查数据目录 logs。' }
 Write-Host "Wiki: http://127.0.0.1:$($wikiConfig.port)"
 Write-Host "MCP:  http://127.0.0.1:$($wikiConfig.mcpPort)/mcp"
+if ($agentEnabled) { Write-Host "Agent: 端口 $agentPort，/mcp 和 /api/research/*，需要 Bearer token。" }
 & (Join-Path $PSScriptRoot 'start-import-watch.ps1')

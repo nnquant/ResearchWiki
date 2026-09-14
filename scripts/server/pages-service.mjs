@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { manifest, assetUrl, dataPath } from '../common.mjs';
 import * as db from './db.mjs';
 import { readPage, scanWiki, splitFrontmatter, countPdfPages } from './wiki-files.mjs';
@@ -6,6 +7,9 @@ import { normalizeSlug, editability, RELATION_FIELDS, relationTarget, typeForSlu
 import { HttpError } from './errors.mjs';
 import { articleMetadataOf } from '../article-metadata.mjs';
 import { researchMetadata, isReviewDue } from '../research-schema.mjs';
+import { articleCategory } from '../article-category.mjs';
+import { withEntityTags } from '../article-entities.mjs';
+import { matchesTags } from '../query/contract.mjs';
 
 let lastDbError = null;
 export function dbError() { return lastDbError; }
@@ -29,15 +33,17 @@ async function pageMeta(entry) {
   if (cached && cached.mtime === entry.mtime) return cached.meta;
   const text = await fs.readFile(entry.file, 'utf8');
   const { frontmatter, body } = splitFrontmatter(text);
+  const type = typeof frontmatter.type === 'string' ? frontmatter.type : (typeForSlug(entry.slug) ?? 'note');
   const meta = {
     slug: entry.slug,
     title: typeof frontmatter.title === 'string' && frontmatter.title.trim() ? frontmatter.title : (text.match(/^# (.+)$/m)?.[1] ?? entry.slug),
-    type: typeof frontmatter.type === 'string' ? frontmatter.type : (typeForSlug(entry.slug) ?? 'note'),
-    tags: Array.isArray(frontmatter.tags) ? frontmatter.tags.map(String) : [],
+    type,
+    category: articleCategory(frontmatter, type),
+    tags: withEntityTags(frontmatter).tags,
     aliases: Array.isArray(frontmatter.aliases) ? frontmatter.aliases.map(String) : [],
     review_status: typeof frontmatter.review_status === 'string' ? frontmatter.review_status : null,
     research: researchMetadata(frontmatter),
-    excerpt: excerptOf(body, frontmatter.abstract),
+    excerpt: excerptOf(body, frontmatter.summary || frontmatter.abstract),
     updated_at: new Date(entry.mtime).toISOString(),
   };
   metaCache.set(entry.slug, { mtime: entry.mtime, meta });
@@ -70,8 +76,9 @@ export async function getIndex() {
         slug: row.slug,
         title: row.title ?? row.slug,
         type: row.type ?? typeForSlug(row.slug) ?? 'note',
+        category: (await pageMeta(entry)).category,
         review_status: row.review_status ?? null,
-        tags: row.tags ?? [],
+        tags: (await pageMeta(entry)).tags,
         aliases: Array.isArray(row.aliases) ? row.aliases.map(String) : [],
         research: (await pageMeta(entry)).research,
         updated_at: row.updated_at,
@@ -94,19 +101,20 @@ export async function getIndex() {
 /** Use the same page inventory as the sidebar, including pages not indexed by GBrain. */
 export function filterPageIndex(index, filters) {
   let items = index;
-  if (filters.type?.length) items = items.filter(x => filters.type.includes(x.type));
+  if (filters.type?.length) items = items.filter(x => filters.type.includes(x.category ?? x.type));
   if (filters.tag) items = items.filter(x => x.tags.includes(filters.tag));
+  items = items.filter(x => matchesTags(x.tags, filters));
   if (filters.status) items = items.filter(x => x.review_status === filters.status);
   if (filters.stage) items = items.filter(x => x.research?.research_stage === filters.stage);
   if (filters.due) items = items.filter(x => isReviewDue(x));
   if (filters.q) {
     const q = filters.q.toLowerCase();
-    items = items.filter(x => [x.title, x.slug, ...(x.aliases ?? []), ...(x.research?.tickers ?? []), x.research?.region ?? ''].join(' ').toLowerCase().includes(q));
+    items = items.filter(x => [x.title, x.slug, ...(x.tags ?? []), ...(x.aliases ?? []), ...(x.research?.tickers ?? []), x.research?.region ?? ''].join(' ').toLowerCase().includes(q));
   }
   const key = { updated: 'updated_at', created: 'created_at', title: 'title', type: 'type', slug: 'slug' }[filters.sort] ?? 'updated_at';
   const direction = filters.dir === 'asc' ? 1 : -1;
   items = [...items].sort((a, b) => {
-    const left = a[key], right = b[key];
+    const left = key === 'type' ? a.category ?? a.type : a[key], right = key === 'type' ? b.category ?? b.type : b[key];
     if (left == null && right != null) return 1;
     if (left != null && right == null) return -1;
     const compared = key.endsWith('_at')
@@ -121,15 +129,16 @@ export function filterPageIndex(index, filters) {
 export async function typesWithCounts() {
   const index = await getIndex();
   const counts = new Map();
-  for (const item of index) counts.set(item.type, (counts.get(item.type) ?? 0) + 1);
-  const known = PAGE_TYPES.map(type => ({ type, label: TYPE_LABELS[type] ?? type, dir: dirForType(type), n: counts.get(type) ?? 0 }));
+  for (const item of index) {
+    const category = item.category ?? item.type;
+    counts.set(category, (counts.get(category) ?? 0) + 1);
+  }
+  const known = PAGE_TYPES.map(type => ({ type, label: type === 'source' ? '待分类文献' : TYPE_LABELS[type] ?? type, dir: dirForType(type), n: counts.get(type) ?? 0 }));
   for (const [type, n] of counts) if (!PAGE_TYPES.includes(type)) known.push({ type, label: type, dir: null, n });
   return known;
 }
 
 export async function tagsWithCounts() {
-  const rows = await safeDb(db.tagCounts, null);
-  if (rows) return rows;
   const counts = new Map();
   for (const item of await getIndex()) for (const tag of item.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
   return [...counts].map(([tag, n]) => ({ tag, n })).sort((a, b) => b.n - a.n || a.tag.localeCompare(b.tag));
@@ -142,9 +151,30 @@ function groupRelations(links, into) {
   }
 }
 
+/** Only expose saved translations that the existing asset routes can serve. */
+export async function savedTranslationUrl(relativePath) {
+  if (typeof relativePath !== 'string' || !relativePath.trim()) return null;
+  const isPublic = file => ['raw', 'parsed', 'wiki'].some(dir => file.startsWith(dataPath(dir) + path.sep));
+  const file = dataPath(relativePath);
+  if (!isPublic(file)) return null;
+  try {
+    const real = await fs.realpath(file);
+    if (!isPublic(real)) return null;
+    const stat = await fs.stat(real);
+    if (!stat.isFile() || stat.size === 0) return null;
+    if (file.startsWith(dataPath('wiki') + path.sep) && path.extname(file) === '.md') {
+      const slug = normalizeSlug(path.relative(dataPath('wiki'), file));
+      return '/page/' + slug.split('/').map(encodeURIComponent).join('/');
+    }
+    return assetUrl(file);
+  } catch {
+    return null;
+  }
+}
+
 async function provenanceFor(page) {
   const fm = page.frontmatter;
-  if (page.type !== 'source' && !fm.raw_path) return null;
+  if (page.type !== 'source' && !fm.raw_path && !fm.translation_path) return null;
   const docs = Object.values((await manifest()).documents);
   const doc = docs.find(d => normalizeSlug(d.wiki_slug ?? '') === page.slug) ?? null;
   const urlFor = rel => {
@@ -154,6 +184,7 @@ async function provenanceFor(page) {
   return {
     raw_url: urlFor(fm.raw_path ?? doc?.raw_path),
     parsed_url: urlFor(fm.parsed_path ?? doc?.parsed_path),
+    translation_url: await savedTranslationUrl(fm.translation_path ?? doc?.translation_path),
     page_map_url: urlFor(doc?.page_map),
     source_url: fm.source_url ?? doc?.source_url ?? null,
     source_kind: fm.source_kind ?? doc?.source_kind ?? null,
@@ -205,6 +236,7 @@ export async function getPage(slugInput) {
     title: typeof fm.title === 'string' && fm.title.trim() ? fm.title : (row?.title ?? page.slug),
     type,
     type_label: TYPE_LABELS[type] ?? type,
+    category: articleCategory(fm, type),
     frontmatter: fm,
     research: researchMetadata(fm),
     article_metadata: type === 'source' ? articleMetadataOf(fm) : null,
@@ -218,7 +250,7 @@ export async function getPage(slugInput) {
     stale: row ? isStale(page.slug, page.mtime, row.updated_at) : !PIPELINE_PAGES.has(page.slug),
     editable,
     edit_reason: reason,
-    tags: row?.tags?.length ? row.tags : (Array.isArray(fm.tags) ? fm.tags.map(String) : []),
+    tags: withEntityTags(fm).tags,
     aliases: Array.isArray(fm.aliases) ? fm.aliases.map(String) : [],
     review_status: typeof fm.review_status === 'string' ? fm.review_status : null,
     pdf_pages: countPdfPages(page.body),
@@ -261,6 +293,11 @@ export async function getSummary(slugInput) {
   if (!page) throw new HttpError(404, '页面不存在');
   const meta = await pageMeta(page);
   return { ...meta, pdf_pages: countPdfPages(page.body) };
+}
+
+export async function categoryForPage(slug) {
+  const entry = (await scanWiki()).get(normalizeSlug(slug));
+  return entry ? (await pageMeta(entry)).category : null;
 }
 
 /** Body cache for chunk → PDF page mapping (small, mtime-checked). */

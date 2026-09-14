@@ -45,6 +45,10 @@ export function typeLabel(type: string | null | undefined): string {
   return TYPE_META[type]?.label ?? type;
 }
 
+export function categoryLabel(category: string | null | undefined): string {
+  return category === 'source' ? '待分类文献' : typeLabel(category);
+}
+
 export function typeColor(type: string | null | undefined): string {
   const meta = type ? TYPE_META[type] : undefined;
   return `var(${meta?.cssVar ?? '--t-other'})`;

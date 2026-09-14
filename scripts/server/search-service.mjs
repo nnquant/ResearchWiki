@@ -1,7 +1,7 @@
 import { config, root, gb } from '../common.mjs';
 import { sharedConnection, createSharedClient } from '../shared-api-client.mjs';
 import { callTool } from './mcp-client.mjs';
-import { pdfPageForChunk } from './pages-service.mjs';
+import { pdfPageForChunk, categoryForPage } from './pages-service.mjs';
 import { HttpError } from './errors.mjs';
 
 const SNIPPET_CHARS = 700;
@@ -122,6 +122,7 @@ export async function search({ q, mode = 'fast', types = [], limit = 20, offset 
   const results = [];
   for (const hit of hits.map(normalizeHit)) {
     const { raw_chunk, ...rest } = hit;
+    rest.category = await categoryForPage(hit.slug) ?? hit.type;
     rest.pdf_page = hit.type === 'source' ? await pdfPageForChunk(hit.slug, raw_chunk) : null;
     results.push(rest);
   }

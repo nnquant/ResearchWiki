@@ -7,9 +7,10 @@ import { Loading, ErrorBlock } from '../app/ui';
 import { Markdown } from '../reader/Markdown';
 import { ReaderAside } from '../reader/ReaderAside';
 import { ArticleMetadata } from '../reader/ArticleMetadata';
+import { AnalystExpectations } from '../reader/AnalystExpectations';
 import { ResearchMetadata } from '../reader/ResearchMetadata';
 import { splitPdfPages, pdfPageId, sectionPrefix } from '../lib/outline';
-import { typeColor, typeLabel, STATUS_LABELS } from '../lib/types';
+import { typeColor, categoryLabel, STATUS_LABELS } from '../lib/types';
 import { relativeTime, formatDate } from '../lib/format';
 import type { Page } from '../api/types';
 
@@ -72,7 +73,7 @@ export function PageView() {
     if (page && page.slug !== slug) navigate(pageUrl(page.slug), { replace: true });
   }, [page, slug, navigate]);
 
-  useCrumbs(page ? [{ label: typeLabel(page.type), to: `/library?type=${page.type}` }, { label: page.title }] : [{ label: slug }]);
+  useCrumbs(page ? [{ label: categoryLabel(page.category ?? page.type), to: `/library?type=${page.category ?? page.type}` }, { label: page.title }] : [{ label: slug }]);
   useScrollTargets(page, bodyRef);
 
   const readerMarkdown = useMemo(() => page?.type === 'source'
@@ -139,7 +140,7 @@ export function PageView() {
       <article>
         <header>
           <div className="eyebrow">
-            <b style={{ color: typeColor(page.type) }}>{typeLabel(page.type)}</b>
+            <b style={{ color: typeColor(page.category ?? page.type) }}>{categoryLabel(page.category ?? page.type)}</b>
             {status && <span className="flag">{status}</span>}
             {!page.indexed && <span className="flag" title="此页面尚未进入检索索引">未索引</span>}
             {page.indexed && page.stale && <span className="flag" title="磁盘文件比索引新">索引待更新</span>}
@@ -163,6 +164,7 @@ export function PageView() {
               : <button className="btn" disabled title={page.edit_reason ?? ''}>只读</button>}
             <Link className="btn" to={graphUrl(page.slug)}>关联图</Link>
             {page.provenance?.parsed_url && <a className="btn" href={page.provenance.parsed_url}>解析 Markdown</a>}
+            {page.provenance?.translation_url && <a className="btn" href={page.provenance.translation_url} title="打开已保存的译文">翻译</a>}
             {page.type === 'source' && <button className="btn" onClick={() => openNewPage('claim', page.slug)}>由此新建观点</button>}
             {page.type === 'source' && <button className="btn" onClick={() => openNewPage('note', page.slug)}>添加阅读笔记</button>}
             <button className="btn ghost" onClick={copyLink}>复制链接</button>
@@ -171,6 +173,7 @@ export function PageView() {
 
         {page.research && <ResearchMetadata fields={page.research} />}
         {page.frontmatter_error && <div className="notice warn frontmatter-error">frontmatter 解析失败：{page.frontmatter_error}</div>}
+        {page.type === 'source' && <AnalystExpectations value={page.frontmatter.analyst_expectations} />}
         {page.type === 'source' && page.relations.in.derived_from?.some(ref => ['note', 'paper', 'report'].includes(ref.type)) && (
           <section className="notice" style={{ marginBottom: 20 }}>
             <b>阅读笔记与解读</b>
@@ -196,7 +199,7 @@ export function PageView() {
       </article>
 
       <ReaderAside page={page} sections={sections} activeId={activeId} onNavigate={id => navigate(`#${id}`)} />
-      {page.type === 'source' && <aside className="reader-info" aria-label="文献与研究信息"><ArticleMetadata key={page.slug} fields={page.frontmatter} /></aside>}
+      {page.type === 'source' && <aside className="reader-info" aria-label="文献与研究信息"><ArticleMetadata key={page.slug} fields={{ ...page.frontmatter, research_category: page.category }} /></aside>}
     </div>
   );
 }

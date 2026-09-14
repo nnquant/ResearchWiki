@@ -88,23 +88,28 @@ export function useRawPage(slug: string | undefined) {
 
 export interface SearchParams {
   q: string;
-  mode: 'fast' | 'deep';
+  mode: 'fast' | 'deep' | 'lexical' | 'hybrid';
   types?: string[];
   limit?: number;
+  tags_all?: string[];
+  tags_any?: string[];
+  tags_none?: string[];
+  cursor?: string;
 }
 
-export function useSearch({ q, mode, types = [], limit = 20 }: SearchParams, enabled = true) {
+export function useSearch({ q, mode, types = [], limit = 20, tags_all = [], tags_any = [], tags_none = [], cursor }: SearchParams, enabled = true) {
   const typesKey = types.join(',');
   return useQuery({
-    queryKey: keys.search(q, mode, typesKey, limit),
+    queryKey: [...keys.search(q, mode, typesKey, limit), JSON.stringify([tags_all, tags_any, tags_none]), cursor ?? ''],
     queryFn: ({ signal }) => {
       const params = new URLSearchParams({ q, mode, limit: String(limit) });
       if (typesKey) params.set('types', typesKey);
+      for (const [key, values] of Object.entries({ tags_all, tags_any, tags_none })) values.forEach(t => params.append(key, t));
+      if (cursor) params.set('cursor', cursor);
       return api<SearchResponse>(`/api/search?${params}`, { signal });
     },
     enabled: enabled && q.trim().length >= 1,
     staleTime: 60_000,
-    placeholderData: keepPreviousData,
     retry: false,
   });
 }

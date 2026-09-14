@@ -7,6 +7,11 @@
     "web"
   ],
   "scripts": {
+    "research": "node scripts/agent/cli.mjs",
+    "research:index": "node scripts/query/index.mjs",
+    "research:mcp": "node scripts/agent/mcp.mjs",
+    "research:package": "node scripts/agent/package.mjs",
+    "research:share": "node scripts/agent/publish-install.mjs",
     "wiki": "node scripts/wiki.mjs",
     "dev": "npm run dev -w web",
     "build": "npm run build -w web",

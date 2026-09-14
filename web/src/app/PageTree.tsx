@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { NavLink, Link, useLocation } from 'react-router';
 import { useIndex } from '../api/hooks';
 import { pageUrl } from '../api/client';
-import { TYPE_META, TYPE_ORDER, CORE_TYPES, typeColor, typeLabel } from '../lib/types';
+import { TYPE_META, TYPE_ORDER, CORE_TYPES, typeColor, categoryLabel as typeLabel } from '../lib/types';
 import type { IndexEntry } from '../api/types';
 
 const SHOW = 8;
@@ -21,9 +21,10 @@ export function PageTree() {
   const groups = useMemo(() => {
     const map = new Map<string, IndexEntry[]>();
     for (const item of index ?? []) {
-      const list = map.get(item.type) ?? [];
+      const category = item.category ?? item.type;
+      const list = map.get(category) ?? [];
       list.push(item);
-      map.set(item.type, list);
+      map.set(category, list);
     }
     const order = [...TYPE_ORDER, ...[...map.keys()].filter(t => !TYPE_ORDER.includes(t))];
     return order
@@ -85,5 +86,5 @@ export function PageTree() {
 }
 
 function defaultOpen(type: string): boolean {
-  return type === 'source';
+  return CORE_TYPES.includes(type);
 }

@@ -13,7 +13,7 @@ const { validatePageText } = await import('../scripts/server/validate.mjs');
 const { renderTemplate, listTemplates } = await import('../scripts/server/templates.mjs');
 const { createRouter } = await import('../scripts/server/router.mjs');
 const { HttpError } = await import('../scripts/server/errors.mjs');
-const { filterPageIndex, excerptOf } = await import('../scripts/server/pages-service.mjs');
+const { filterPageIndex, excerptOf, savedTranslationUrl, getIndex, getSummary, typesWithCounts } = await import('../scripts/server/pages-service.mjs');
 
 await ensureDirs();
 await fs.writeFile(dataPath('wiki', 'sources', 'doc1.md'), '---\ntitle: "Doc One"\ntype: "source"\n---\n# Doc One\n\n## PDF 第 1 页\n\ntext\n', 'utf8');
@@ -21,6 +21,17 @@ await fs.writeFile(dataPath('wiki', 'concepts', 'Agent使用协议.md'), '---\nt
 invalidateScan();
 
 test.after(async () => { await fs.rm(testRoot, { recursive: true, force: true }); });
+
+test('translation links require an existing, nonempty file in a public directory', async () => {
+  await fs.writeFile(dataPath('parsed', '译文.md'), '# 已保存的译文');
+  await fs.writeFile(dataPath('parsed', 'empty.md'), '');
+  await fs.writeFile(dataPath('state', 'private.md'), 'private');
+  assert.equal(await savedTranslationUrl('parsed/译文.md'), '/assets/parsed/%E8%AF%91%E6%96%87.md');
+  assert.equal(await savedTranslationUrl('wiki/sources/doc1.md'), '/page/sources/doc1');
+  for (const value of [undefined, null, '', {}, 'parsed/missing.md', 'parsed/empty.md', 'parsed', 'state/private.md', 'parsed/../state/private.md', '../outside.md', 'https://example.com/translation.md']) {
+    assert.equal(await savedTranslationUrl(value), null, JSON.stringify(value));
+  }
+});
 
 test('slug normalization mirrors gbrain (lowercase, CJK kept, accents stripped, spaces to hyphens)', () => {
   assert.equal(normalizeSlug('concepts/Agent使用协议.md'), 'concepts/agent使用协议');
@@ -78,6 +89,35 @@ test('article preview prefers abstract, falls back to clean body and caps at 200
   assert.equal(excerptOf(body, null), '正文包含研究证据。');
   assert.equal(excerptOf('', '研😀'.repeat(110)), '研😀'.repeat(100) + '…');
   assert.equal(excerptOf(''), '');
+});
+
+test('research category filters mix original documents and notes without duplicating sources', () => {
+  const pages = [
+    { slug: 'sources/company', title: 'A', type: 'source', category: 'company' },
+    { slug: 'companies/note', title: 'B', type: 'company', category: 'company' },
+    { slug: 'sources/industry', title: 'C', type: 'source', category: 'industry' },
+    { slug: 'sources/unknown', title: 'D', type: 'source', category: 'source' },
+  ];
+  const company = filterPageIndex(pages, { type: ['company'], sort: 'title', dir: 'asc', limit: 1 });
+  assert.equal(company.total, 2);
+  assert.equal(company.items[0].slug, 'sources/company');
+  assert.equal(company.items[0].type, 'source');
+  assert.equal(filterPageIndex(pages, { type: ['source'] }).total, 1);
+  assert.equal(filterPageIndex(pages, { type: ['industry'] }).items[0].slug, 'sources/industry');
+  assert.equal(filterPageIndex(pages, {}).total, 4);
+});
+
+test('existing source files acquire consistent categories in index, counts and reader summaries', async () => {
+  await writePage('sources/category-company', '---\ntitle: NetApp（NTAP）财报点评\ntype: source\n---\n## PDF 第 1 页\n原文。', { create: true });
+  const index = await getIndex();
+  const entry = index.find(p => p.slug === 'sources/category-company');
+  assert.equal(entry.type, 'source');
+  assert.equal(entry.category, 'company');
+  assert.equal((await getSummary(entry.slug)).category, 'company');
+  const counts = await typesWithCounts();
+  assert.equal(counts.find(t => t.type === 'company').n, filterPageIndex(index, { type: ['company'] }).total);
+  assert.equal(counts.find(t => t.type === 'source').label, '待分类文献');
+  assert.equal(counts.reduce((n, t) => n + t.n, 0), index.length);
 });
 
 test('archived card links open the full text without shadowing actual notes', async () => {

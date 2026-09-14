@@ -1,8 +1,11 @@
 import { useState, type ReactNode } from 'react';
 import schema from '../../../config/article-metadata.schema.json';
+import { categoryLabel } from '../lib/types';
+import { Link } from 'react-router';
 
 const groups = [
-  { title: '文献信息', keys: ['authors', 'institutions', 'doi', 'arxiv_id', 'language', 'abstract'] },
+  { title: '文献信息', keys: ['summary', 'research_category', 'authors', 'institutions', 'doi', 'arxiv_id', 'language', 'abstract'] },
+  { title: '研究对象', keys: ['companies', 'industries', 'subfields'] },
   { title: '研究信息', keys: ['asset_classes', 'markets', 'research_topics', 'research_question', 'strategy_frequency', 'sample_start', 'sample_end', 'sample_period', 'methods', 'key_findings', 'key_evidence', 'limitations', 'reproducible_experiments', 'personal_rating'] },
 ];
 
@@ -31,11 +34,18 @@ export function ArticleMetadata({ fields }: { fields: Record<string, unknown> })
       <dl>{keys.map(key => {
         const value = fields[key];
         const label = schema.properties[key as keyof typeof schema.properties].title;
+        const items = Array.isArray(value) ? value.filter(filled) : null;
+        const isTagList = items !== null && !['key_findings', 'key_evidence', 'limitations', 'reproducible_experiments'].includes(key);
         return <div key={key} className="article-field">
           <dt>{label}</dt>
-          <dd><CollapsibleField text={Array.isArray(value) ? value.filter(filled).join('\n') : String(value)}>{Array.isArray(value)
-            ? (['key_findings', 'key_evidence', 'limitations', 'reproducible_experiments'].includes(key) ? <ul>{value.filter(filled).map((item, i) => <li key={i}>{String(item)}</li>)}</ul> : value.filter(filled).join('、'))
-            : key === 'personal_rating' ? `${value} / 5` : String(value)}</CollapsibleField></dd>
+          <dd>{isTagList && items
+            ? <ul className="metadata-tags" role="list">{items.map((item, i) => {
+              const prefix = ({ companies: '公司', industries: '行业', subfields: '领域' } as Record<string, string>)[key];
+              return <li className="chip" key={i}>{prefix ? <Link to={`/library?tag=${encodeURIComponent(`${prefix}:${String(item)}`)}`}>{String(item)}</Link> : String(item)}</li>;
+            })}</ul>
+            : <CollapsibleField text={items ? items.join('\n') : String(value)}>{items
+              ? <ul>{items.map((item, i) => <li key={i}>{String(item)}</li>)}</ul>
+              : key === 'personal_rating' ? `${value} / 5` : key === 'research_category' ? categoryLabel(String(value)) : String(value)}</CollapsibleField>}</dd>
         </div>;
       })}</dl>
     </section>;

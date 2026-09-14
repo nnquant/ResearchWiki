@@ -1,6 +1,7 @@
 import { getIndex, getPage, getRaw, getSummary, typesWithCounts, tagsWithCounts, homeData, filterPageIndex, dbError } from '../pages-service.mjs';
 import { HttpError } from '../errors.mjs';
 import { PAGE_TYPES } from '../slugs.mjs';
+import { strings } from '../../query/contract.mjs';
 
 function intParam(url, key, fallback, { min = 0, max = Infinity } = {}) {
   const raw = url.searchParams.get(key);
@@ -22,6 +23,9 @@ export function registerPageRoutes(router) {
     const filters = {
       type,
       tag: url.searchParams.get('tag') || null,
+      tags_all: strings(url.searchParams.getAll('tags_all')),
+      tags_any: strings(url.searchParams.getAll('tags_any')),
+      tags_none: strings(url.searchParams.getAll('tags_none')),
       status: url.searchParams.get('status') || null,
       stage: url.searchParams.get('stage') || null,
       due: url.searchParams.get('due') === 'true',

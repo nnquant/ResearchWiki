@@ -8,7 +8,7 @@ function Service({ name, ok, detail }: { name: string; ok: boolean; detail?: str
   return (
     <div className="stat">
       <div className="label">{name}</div>
-      <div className="value" style={{ color: ok ? 'var(--ok)' : 'var(--danger)', fontSize: 16 }}>{ok ? '正常' : '异常'}</div>
+      <div className="value" style={{ color: ok ? 'var(--ok)' : 'var(--danger)', fontSize: 16, fontFamily: 'var(--font-sans)' }}>{ok ? '正常' : '异常'}</div>
       {detail && <div className="sub">{detail}</div>}
     </div>
   );
@@ -31,9 +31,9 @@ export function StatusPage() {
 
       <h2 className="section-title">服务</h2>
       <div className="stat-grid">
-        <Service name="PostgreSQL + pgvector" ok={stats.services.postgres.ok} detail={stats.services.postgres.error ?? '127.0.0.1:5436'} />
-        <Service name="GBrain MCP" ok={stats.services.mcp.ok} detail={stats.services.mcp.version ? `v${stats.services.mcp.version} · :3131` : ':3131'} />
-        <Service name={stats.services.ollama.provider === 'shared' ? '内网 GPU embedding' : 'Ollama embedding'} ok={stats.services.ollama.ok && stats.services.ollama.model_present !== false} detail={stats.services.ollama.error ?? (stats.services.ollama.ok ? `${stats.model} · ${stats.services.ollama.model_present ? '可用' : '模型不可用'}` : '服务不可用')} />
+        <Service name="向量数据库" ok={stats.services.postgres.ok} detail={stats.services.postgres.error ?? '127.0.0.1:5436'} />
+        <Service name="GBrain" ok={stats.services.mcp.ok} detail={stats.services.mcp.version ? `v${stats.services.mcp.version} · :3131` : ':3131'} />
+        <Service name="Embedding" ok={stats.services.ollama.ok && stats.services.ollama.model_present !== false} detail={stats.services.ollama.error ?? (stats.services.ollama.ok ? `${stats.model} · ${stats.services.ollama.model_present ? '可用' : '模型不可用'}` : '服务不可用')} />
       </div>
 
       <h2 className="section-title">索引</h2>
