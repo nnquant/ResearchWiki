@@ -44,7 +44,7 @@ try {
   const client = new Client({ name: 'researchwiki-network-acceptance', version: '1' });
   try {
     await client.connect(new StreamableHTTPClientTransport(new URL(baseUrl + '/mcp'), { requestInit: { headers } }));
-    const tools = await client.listTools(); assert.equal(tools.tools.length, 6); checks.push('mcp_initialize_and_list');
+    const tools = await client.listTools(); assert.equal(tools.tools.length, 7); checks.push('mcp_initialize_and_list');
     // Reuse a frozen cursor or immutable revision: live indexing may change tags between requests.
     const result = nextPage
       ? await client.callTool({ name: 'research_query', arguments: { cursor: query.next_cursor, limit: 1 } })

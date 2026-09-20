@@ -4,11 +4,11 @@ import { readJson } from '../security.mjs';
 import { execute } from '../../query/service.mjs';
 const authorized = readTokenAuth(dataPath('runtime', 'mcp-read-token'));
 export async function isAgentReadRequest(req, pathname) {
-  if (req.method !== 'POST' || !/^\/api\/research\/(describe|resolve|query|search|read|related)$/.test(pathname)) return false;
+  if (req.method !== 'POST' || !/^\/api\/research\/(describe|resolve|query|search|read|related|graph)$/.test(pathname)) return false;
   return authorized(req);
 }
 export function registerResearchRoutes(router) {
-  for (const operation of ['describe', 'resolve', 'query', 'search', 'read', 'related']) {
+  for (const operation of ['describe', 'resolve', 'query', 'search', 'read', 'related', 'graph']) {
     router.route('POST', `/api/research/${operation}`, async ({ req, res }) => {
       const controller = new AbortController();
       const cancel = () => { if (!res.writableEnded) controller.abort(); };

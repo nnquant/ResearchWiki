@@ -11,7 +11,7 @@ export function serviceErrorDetails(error) {
 }
 
 export function serviceFailureKind(error) {
-  if(error?.code==='CODEBUDDY_CONFIG')return 'fatal';
+  if(['CODEBUDDY_CONFIG','STRUCTURED_OUTPUT_CONFIG'].includes(error?.code))return 'fatal';
   const status=error?.httpStatus??error?.http_status;
   if([401,402,403].includes(status)||/HTTP (401|402|403)\b/.test(error?.message??''))return 'fatal';
   if([408,429,500,502,503,504].includes(status))return 'transient';

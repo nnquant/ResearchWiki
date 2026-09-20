@@ -13,7 +13,7 @@ const { validatePageText } = await import('../scripts/server/validate.mjs');
 const { renderTemplate, listTemplates } = await import('../scripts/server/templates.mjs');
 const { createRouter } = await import('../scripts/server/router.mjs');
 const { HttpError } = await import('../scripts/server/errors.mjs');
-const { filterPageIndex, excerptOf, savedTranslationUrl, getIndex, getSummary, typesWithCounts } = await import('../scripts/server/pages-service.mjs');
+const { filterPageIndex, excerptOf, savedTranslationUrl, getIndex, getScopedIndex, getSummary, typesWithCounts } = await import('../scripts/server/pages-service.mjs');
 
 await ensureDirs();
 await fs.writeFile(dataPath('wiki', 'sources', 'doc1.md'), '---\ntitle: "Doc One"\ntype: "source"\n---\n# Doc One\n\n## PDF 第 1 页\n\ntext\n', 'utf8');
@@ -89,6 +89,21 @@ test('article preview prefers abstract, falls back to clean body and caps at 200
   assert.equal(excerptOf(body, null), '正文包含研究证据。');
   assert.equal(excerptOf('', '研😀'.repeat(110)), '研😀'.repeat(100) + '…');
   assert.equal(excerptOf(''), '');
+});
+
+test('entity-scoped inventory excludes other pages and never reads complete article bodies', async () => {
+  const original = fs.readFile;
+  fs.readFile = async (file, ...args) => {
+    if (String(file).endsWith('doc1.md')) throw new Error('Full article read is forbidden on scoped browsing');
+    return original(file, ...args);
+  };
+  try {
+    const rows = await getScopedIndex(new Set(['sources/doc1', 'sources/missing']));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].title, 'Doc One');
+    assert.equal(rows[0].slug, 'sources/doc1');
+    assert.equal(rows[0].excerpt, '');
+  } finally { fs.readFile = original; }
 });
 
 test('research category filters mix original documents and notes without duplicating sources', () => {

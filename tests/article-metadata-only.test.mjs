@@ -31,6 +31,21 @@ test('metadata-only processing submits the entire article once, preserves its bo
     const resumed=await stageMetadataArticle({id:'fixture',title:'Test',revision:'v1',parsed_path:'parsed/article.md',wiki_slug:'sources/fixture'},{model:'fixture',baseUrl:'https://fixture.invalid/v1',apiKey:'test'},staging);
     assert.equal(requests.length,1);
     assert.equal(resumed.completed_at,result.completed_at);
+    // Enabling strict output must not reuse a legacy staged response, but an
+    // already validated strict stage remains reusable after an indexing retry.
+    globalThis.fetch=async(_url,init)=>{
+      const request=JSON.parse(init.body);requests.push(request);
+      assert.equal(request.response_format.type,'json_schema');
+      const metadata=Object.fromEntries(Object.keys(request.response_format.json_schema.schema.properties.metadata.properties).map(key=>[key,['companies','industries','subfields'].includes(key)?[]:null]));
+      Object.assign(metadata,{summary:'报告预计电力基础设施投资增加。',tags:['电力'],key_findings:['电力基础设施投资增加']});
+      return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({metadata,evidence:['summary','tags','key_findings'].map(field=>({field,quote:'The report forecasts higher investment in power infrastructure.',page:1,item:null}))})}}]});
+    };
+    const record={id:'fixture',title:'Test',revision:'v1',parsed_path:'parsed/article.md',wiki_slug:'sources/fixture'};
+    const strictConfig={model:'fixture',baseUrl:'https://fixture.invalid/v1',apiKey:'test',structuredOutputs:'json_schema'};
+    const strictResult=await stageMetadataArticle(record,strictConfig,staging);
+    assert.equal(requests.length,2);assert.equal(strictResult.output_schema_version,'article-output-schema-v1');
+    await stageMetadataArticle(record,strictConfig,staging);
+    assert.equal(requests.length,2);
   } finally {globalThis.fetch=originalFetch;await fs.rm(root,{recursive:true,force:true});}
 });
 

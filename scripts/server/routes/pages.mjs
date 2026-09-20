@@ -1,7 +1,9 @@
-import { getIndex, getPage, getRaw, getSummary, typesWithCounts, tagsWithCounts, homeData, filterPageIndex, dbError } from '../pages-service.mjs';
+import { getIndex, getScopedIndex, getPage, getRaw, getSummary, typesWithCounts, tagsWithCounts, homeData, filterPageIndex, dbError } from '../pages-service.mjs';
 import { HttpError } from '../errors.mjs';
 import { PAGE_TYPES } from '../slugs.mjs';
 import { strings } from '../../query/contract.mjs';
+import { withRead } from '../../query/store.mjs';
+import { entityScopeSlugs } from '../../query/graph-query.mjs';
 
 function intParam(url, key, fallback, { min = 0, max = Infinity } = {}) {
   const raw = url.searchParams.get(key);
@@ -35,6 +37,11 @@ export function registerPageRoutes(router) {
       limit: intParam(url, 'limit', 50, { min: 1, max: 200 }),
       offset: intParam(url, 'offset', 0, { min: 0 }),
     };
+    const entityId = url.searchParams.get('entity_id');
+    if (entityId) {
+      const scope = await withRead(run => entityScopeSlugs(run, entityId));
+      return { ...filterPageIndex(await getScopedIndex(scope.slugs), filters), graph_index: scope.graph_index, degraded: false };
+    }
     const index = await getIndex();
     return { ...filterPageIndex(index, filters), degraded: Boolean(dbError()) };
   });

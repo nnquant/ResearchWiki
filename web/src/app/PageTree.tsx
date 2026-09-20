@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { NavLink, Link, useLocation } from 'react-router';
-import { useIndex } from '../api/hooks';
+import { useIndex, useGraphNavigation } from '../api/hooks';
 import { pageUrl } from '../api/client';
 import { TYPE_META, TYPE_ORDER, CORE_TYPES, typeColor, categoryLabel as typeLabel } from '../lib/types';
 import type { IndexEntry } from '../api/types';
@@ -14,8 +14,11 @@ function readOpen(): Record<string, boolean> {
 
 /** Type-grouped page tree: each group shows its most recent pages with a link to the filtered library. */
 export function PageTree() {
-  const { data: index } = useIndex();
   const location = useLocation();
+  const inGraph = location.pathname === '/graph' || location.pathname.startsWith('/graph/') || Boolean(new URLSearchParams(location.search).get('entity_id'));
+  const { data: fullIndex } = useIndex(!inGraph);
+  const { data: navigation } = useGraphNavigation(inGraph);
+  const index = inGraph ? navigation?.items : fullIndex;
   const [open, setOpen] = useState<Record<string, boolean>>(readOpen);
 
   const groups = useMemo(() => {
@@ -31,9 +34,10 @@ export function PageTree() {
       .filter(type => map.has(type) || CORE_TYPES.includes(type) || type === 'source')
       .map(type => ({
         type,
+        count: inGraph ? navigation?.counts[type] ?? 0 : map.get(type)?.length ?? 0,
         items: (map.get(type) ?? []).sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))),
       }));
-  }, [index]);
+  }, [index, inGraph, navigation]);
 
   const toggle = (type: string) => {
     const next = { ...open, [type]: !(open[type] ?? defaultOpen(type)) };
@@ -57,7 +61,7 @@ export function PageTree() {
               </button>
               <Link className="tree-category" to={`/library?type=${encodeURIComponent(group.type)}`} aria-current={selected ? 'page' : undefined}>
                 <span className="label">{typeLabel(group.type)}</span>
-                <span className="count">{group.items.length}</span>
+                <span className="count">{group.count}</span>
               </Link>
             </div>
             {isOpen && (
@@ -69,8 +73,8 @@ export function PageTree() {
                     </NavLink>
                   </li>
                 ))}
-                {group.items.length > SHOW && (
-                  <li><Link className="tree-more" to={`/library?type=${group.type}`}>查看全部 {group.items.length} 条 →</Link></li>
+                {group.count > SHOW && (
+                  <li><Link className="tree-more" to={`/library?type=${group.type}`}>查看全部 {group.count} 条 →</Link></li>
                 )}
                 {group.items.length === 0 && (
                   <li className="tree-empty">{meta?.dir ? `还没有${typeLabel(group.type)}页面` : '空'}</li>

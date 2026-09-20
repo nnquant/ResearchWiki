@@ -15,6 +15,7 @@ import { startEmbeddingWarmer } from './search-service.mjs';
 import { registerResearchRoutes, isAgentReadRequest } from './routes/research.mjs';
 import { startQueryRefresh } from '../query/refresh.mjs';
 import { listenAgent } from '../agent/http.mjs';
+import { registerEntityGovernanceRoutes } from './routes/entity-governance.mjs';
 
 function sendJson(res, status, data) {
   res.setHeader('content-type', 'application/json; charset=utf-8');
@@ -37,6 +38,7 @@ export function createApp() {
   registerSearchRoutes(router);
   registerResearchRoutes(router);
   registerGraphRoutes(router);
+  registerEntityGovernanceRoutes(router);
   registerEditRoutes(router);
   registerIngestRoutes(router);
   registerAssetRoutes(router);

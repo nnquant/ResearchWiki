@@ -5,11 +5,19 @@ import {articleConcurrency,startArticleBatch} from '../scripts/article-concurren
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 
-test('article concurrency is bounded at eight and preserves the serial default',()=>{
+test('article concurrency is bounded at sixteen and preserves the serial default',()=>{
   assert.equal(articleConcurrency(),1);
   assert.equal(articleConcurrency('4'),4);
   assert.equal(articleConcurrency('8'),8);
-  for(const value of [0,9,-1,1.5,'bad'])assert.throws(()=>articleConcurrency(value),/1–8/);
+  assert.equal(articleConcurrency('16'),16);
+  for(const value of [0,17,-1,1.5,'bad'])assert.throws(()=>articleConcurrency(value),/1–16/);
+});
+
+test('sixteen actual extractions overlap without admitting a seventeenth',async()=>{
+  const gate=deferred();let active=0,maximum=0;
+  const jobs=startArticleBatch(Array.from({length:20},(_,id)=>({id})),{concurrency:16,stage:async()=>{maximum=Math.max(maximum,++active);await gate.promise;active--;return {};}});
+  await tick();assert.equal(active,16);assert.equal(maximum,16);assert.equal(jobs.length,16);
+  gate.resolve();await Promise.all(jobs.map(job=>job.ready));assert.equal(active,0);
 });
 
 test('eight extractions start concurrently without admitting a ninth article',async()=>{

@@ -1,6 +1,6 @@
 export function articleConcurrency(value = 1) {
   const concurrency = Number(value);
-  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) throw new Error('文章并发数必须为 1–8');
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16) throw new Error('文章并发数必须为 1–16');
   return concurrency;
 }
 

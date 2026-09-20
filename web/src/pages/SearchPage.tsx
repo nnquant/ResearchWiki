@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { useSearch, useTags, useTypes } from '../api/hooks';
+import { useSearch } from '../api/hooks';
+import { useResearchFacets } from '../app/useResearchFacets';
 import { MultiTagFilter, readTagSelection, writeTagSelection } from '../app/MultiTagFilter';
 import { pageUrl } from '../api/client';
 import { useCrumbs } from '../app/UiContext';
 import { Loading, ErrorBlock, TypeBadge, Empty } from '../app/ui';
 import { Highlight, snippetAround } from '../lib/highlight';
 import { typeColor, categoryLabel } from '../lib/types';
+import { EntityFilter } from '../app/EntityFilter';
 
 export function SearchPage() {
   useCrumbs([{ label: '检索' }]);
@@ -17,10 +19,9 @@ export function SearchPage() {
   const [draft, setDraft] = useState(q);
   useEffect(() => setDraft(q), [q]);
 
-  const { data: tags } = useTags();
-  const { data: types } = useTypes();
+  const { types, tags, onTagSearch } = useResearchFacets(Boolean(params.get('entity_id')));
   const tagSelection = readTagSelection(params);
-  const { data, isLoading, error, isFetching } = useSearch({ q, mode, types: typeFilter, ...tagSelection, cursor: params.get('cursor') ?? undefined, limit: 30 }, q.length > 0);
+  const { data, isLoading, error, isFetching } = useSearch({ q, mode, types: typeFilter, ...tagSelection, entity_id: params.get('entity_id') ?? undefined, cursor: params.get('cursor') ?? undefined, limit: 30 }, q.length > 0);
 
   const facets = useMemo(() => {
     return (types ?? []).filter(t => t.n > 0).map(t => [t.type, t.n] as const);
@@ -52,7 +53,9 @@ export function SearchPage() {
         </div>
         <button className="btn primary" type="submit">检索</button>
       </form>
-      <MultiTagFilter tags={tags ?? []} value={tagSelection} onChange={value => { const next = new URLSearchParams(params); writeTagSelection(next, value); next.delete('cursor'); setParams(next); }} />
+      <MultiTagFilter tags={tags ?? []} onSearch={onTagSearch} value={tagSelection} onChange={value => { const next = new URLSearchParams(params); writeTagSelection(next, value); next.delete('cursor'); setParams(next); }} />
+      <EntityFilter />
+      <div className="row small"><Link to={`/graph?${(() => { const p = new URLSearchParams(); writeTagSelection(p, tagSelection); for (const key of ['entity_id', 'entity_label']) if (params.get(key)) p.set(key, params.get(key)!); if (typeFilter.length === 1) p.set('type', typeFilter[0]); return p; })()}`}>在图谱中探索此研究范围 →</Link></div>
 
       {q && isLoading && <Loading label={mode === 'deep' ? '深度检索中…' : '检索中…'} />}
       {error && <ErrorBlock error={error} title="检索失败" />}

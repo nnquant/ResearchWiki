@@ -39,7 +39,7 @@ test('lossless blocks retain exact page offsets, formulae, tables, and Unicode',
   assert.equal(blocks.at(-1).pdf_page, 2);
   assert.equal(makeBlocks('plain web content', hash('x'))[0].pdf_page, null);
 });
-test('public MCP surface is six read operations with structured contracts', () => {
-  assert.deepEqual(agentTools.map(t => t.name), ['research_describe', 'research_resolve', 'research_query', 'research_search', 'research_read', 'research_related']);
+test('public MCP surface is seven read operations with structured contracts', () => {
+  assert.deepEqual(agentTools.map(t => t.name), ['research_describe', 'research_resolve', 'research_query', 'research_search', 'research_read', 'research_related', 'research_graph']);
   for (const tool of agentTools) { assert.equal(tool.annotations.readOnlyHint, true); assert.equal(tool.inputSchema.additionalProperties, false); assert.ok(tool.outputSchema.required.includes('results')); }
 });

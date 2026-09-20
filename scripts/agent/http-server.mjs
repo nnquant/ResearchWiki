@@ -77,8 +77,17 @@ export function createAgentHttpServer({ settings, authorize, execute, assetHandl
       active++; entered = true;
       const baseUrl = settings.publicBaseUrl ?? `http://${req.headers.host.toLowerCase()}`;
       const invoke = async (operation, input, { signal } = {}) => {
-        const result = await execute(operation, input, { signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
-        return networkResult(result, baseUrl, settings.wikiBaseUrl);
+        const started = Date.now(); let result, failure;
+        try {
+          result = await execute(operation, input, { signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
+          return networkResult(result, baseUrl, settings.wikiBaseUrl);
+        } catch (e) { failure = e; throw e; }
+        finally {
+          const latency_ms = Date.now() - started;
+          if (failure || latency_ms >= 1000) console.warn('[research-request] ' + JSON.stringify({ operation, latency_ms,
+            code: failure?.data?.code ?? (failure ? 'REQUEST_FAILED' : 'OK'), request_id: result?.request_id,
+            timings: failure?.queryTimings ?? result?.query_plan?.timings }));
+        }
       };
       if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok', surface: 'research-read', mcp_url: baseUrl + '/mcp' });
       if (url.pathname === '/mcp') {
@@ -95,7 +104,7 @@ export function createAgentHttpServer({ settings, authorize, execute, assetHandl
         finally { await mcp.close(); res.removeListener('close', close); }
         return;
       }
-      const operation = url.pathname.match(/^\/api\/research\/(describe|resolve|query|search|read|related)$/)?.[1];
+      const operation = url.pathname.match(/^\/api\/research\/(describe|resolve|query|search|read|related|graph)$/)?.[1];
       if (operation) {
         if (req.method !== 'POST') { res.setHeader('allow', 'POST'); throw new HttpError(405, '请使用 POST'); }
         if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, '请使用 application/json');

@@ -21,3 +21,20 @@ __pycache__/
 # Generated handoff documents containing read credentials
 /outputs/private/
 /outputs/
+/config/entity-registry.json.*.bak
+/config/.entity-registry-*.tmp
+
+# Instance entity data and corpus-derived reports stay local
+/config/entity-masterdata.json
+/config/entity-registry.json
+/config/entity-reviewed-aliases.json
+/config/entity-reviewed-additions.json
+/config/entity-context-rules.json
+/config/entity-relations.json
+/scripts/query/build-reviewed-entity-seeds.mjs
+/tests/fixtures/entity-quality.json
+/docs/entity-vocabulary.md
+/docs/entity-governance-plan.md
+/docs/entity-governance-results-*.md
+/docs/entity-six-improvements-results-*.md
+/docs/tag-audit-*.md

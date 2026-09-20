@@ -6,7 +6,7 @@ import { combine, tagsFilter } from '../query/contract.mjs';
 export async function main(args = process.argv.slice(2)) {
   const [operation = 'help', ...rest] = args;
   if (operation === 'help' || operation === '--help') {
-    console.log(JSON.stringify({ usage: 'node scripts/agent/cli.mjs <describe|resolve|query|search|read|related> [text/id] [--url URL] [--token-file FILE] [--request file.json|-] [--tag TAG] [--tag-any TAG] [--exclude-tag TAG] [--json]', environment: ['RESEARCHWIKI_URL', 'RESEARCHWIKI_TOKEN', 'RESEARCHWIKI_TOKEN_FILE'], tools: agentTools }, null, 2)); return;
+    console.log(JSON.stringify({ usage: 'node scripts/agent/cli.mjs <describe|resolve|query|search|read|related|graph> [text/id] [--url URL] [--token-file FILE] [--request file.json|-] [--tag TAG] [--tag-any TAG] [--exclude-tag TAG] [--json]', environment: ['RESEARCHWIKI_URL', 'RESEARCHWIKI_TOKEN', 'RESEARCHWIKI_TOKEN_FILE'], tools: agentTools }, null, 2)); return;
   }
   if (!agentTools.some(t => t.name === `research_${operation}`)) throw Object.assign(new Error('未知操作；使用 help 查看接口'), { code: 'INVALID_ARGUMENT' });
   let request = {}, positional = [], tags = { tags_all: [], tags_any: [], tags_none: [] }, connection = {};
@@ -28,8 +28,8 @@ export async function main(args = process.argv.slice(2)) {
     const tagKey = { '--tag': 'tags_all', '--tag-any': 'tags_any', '--exclude-tag': 'tags_none' }[flag];
     if (tagKey) { tags[tagKey].push(value); continue; }
     const name = flag.slice(2).replaceAll('-', '_');
-    if (!['mode', 'section', 'kind', 'view', 'cursor', 'revision_id', 'block_id', 'find', 'sort', 'direction', 'group_by', 'expected_id', 'limit', 'page', 'start_block', 'neighbors', 'depth', 'max_response_tokens', 'timeout_ms'].includes(name)) throw Object.assign(new Error(`未知参数 ${flag}`), { code: 'INVALID_ARGUMENT' });
-    request[name] = ['limit', 'page', 'start_block', 'neighbors', 'depth', 'max_response_tokens', 'timeout_ms'].includes(name) ? Number(value) : value;
+    if (!['operation', 'entity_type', 'entity_name','relation_as_of','max_nodes', 'max_edges', 'mode', 'section', 'kind', 'view', 'cursor', 'revision_id', 'block_id', 'find', 'sort', 'direction', 'group_by', 'expected_id', 'limit', 'page', 'start_block', 'neighbors', 'depth', 'max_response_tokens', 'timeout_ms'].includes(name)) throw Object.assign(new Error(`未知参数 ${flag}`), { code: 'INVALID_ARGUMENT' });
+    request[name] = ['max_nodes', 'max_edges', 'limit', 'page', 'start_block', 'neighbors', 'depth', 'max_response_tokens', 'timeout_ms'].includes(name) ? Number(value) : value;
   }
   if (positional.length) request[['read', 'related'].includes(operation) ? 'id' : operation === 'search' ? 'query' : 'q'] = positional.join(' ');
   const tf = tagsFilter(tags); if (tf) request.filters = combine(request.filters, tf);

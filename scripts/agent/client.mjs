@@ -18,7 +18,7 @@ export async function connection(options = {}, env = process.env) {
   return { baseUrl: url.href.replace(/\/$/, ''), token: token.trim() };
 }
 export async function agentRequest(operation, request = {}, { signal, ...options } = {}) {
-  if (!['describe', 'resolve', 'query', 'search', 'read', 'related'].includes(operation)) throw Object.assign(new Error('未知操作'), { code: 'INVALID_ARGUMENT' });
+  if (!['describe', 'resolve', 'query', 'search', 'read', 'related', 'graph'].includes(operation)) throw Object.assign(new Error('未知操作'), { code: 'INVALID_ARGUMENT' });
   const { baseUrl, token } = await connection(options);
   const deadline = AbortSignal.timeout((request.timeout_ms ?? 15000) + 3000);
   try {

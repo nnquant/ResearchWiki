@@ -44,7 +44,7 @@ test('remote connection never falls back to local server credentials', async () 
 });
 
 test('Bearer is required for HTTP, MCP, health and original files; CSRF is not authentication', async () => {
-  for (const route of ['/api/research/query', '/mcp', '/health', '/assets/raw/test.pdf']) {
+  for (const route of ['/api/research/query', '/api/research/graph', '/mcp', '/health', '/assets/raw/test.pdf']) {
     const response = await fetch(base + route, { headers: { 'x-wiki-token': 'anything' } });
     assert.equal(response.status, 401, route);
   }
@@ -91,11 +91,11 @@ test('HTTP preserves query filters and makes original links usable through confi
   assert.equal(result.results[0].indexed_at, '2026-09-14T00:00:00.000Z');
 });
 
-test('MCP SDK initializes, lists six read tools and calls same service over Streamable HTTP', async () => {
+test('MCP SDK initializes, lists seven read tools and calls same service over Streamable HTTP', async () => {
   const client = new Client({ name: 'remote-acceptance', version: '1' });
   try {
     await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp'), { requestInit: { headers } }));
-    const list = await client.listTools(); assert.equal(list.tools.length, 6);
+    const list = await client.listTools(); assert.equal(list.tools.length, 7);
     assert.ok(list.tools.every(tool => tool.annotations.readOnlyHint));
     const result = await client.callTool({ name: 'research_query', arguments: { limit: 1 } });
     assert.ok(!result.isError); assert.equal(result.structuredContent.operation, 'query');
@@ -142,7 +142,7 @@ test('stdio MCP bridge uses remote URL and never requires local knowledge-base c
   try {
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(target, 'scripts/agent/mcp.mjs')], cwd: target,
       env: { RESEARCHWIKI_URL: base, RESEARCHWIKI_TOKEN_FILE: tokenFile }, stderr: 'pipe' }));
-    assert.equal((await client.listTools()).tools.length, 6);
+    assert.equal((await client.listTools()).tools.length, 7);
     const result = await client.callTool({ name: 'research_query', arguments: { limit: 1 } });
     assert.ok(!result.isError); assert.equal(result.structuredContent.operation, 'query');
   } finally { await client.close(); }

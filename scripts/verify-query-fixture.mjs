@@ -53,7 +53,7 @@ try {
   agent=createAgentHttpServer({settings,execute,authorize:async req=>req.headers.authorization==='Bearer fixture'});await new Promise(resolve=>agent.listen(0,'127.0.0.1',resolve));
   const base=`http://127.0.0.1:${agent.address().port}`;settings.allowedHosts.push(new URL(base).host);
   client=new Client({name:'quant-fixture',version:'1'});await client.connect(new StreamableHTTPClientTransport(new URL(base+'/mcp'),{requestInit:{headers:{authorization:'Bearer fixture'}}}));
-  assert.equal((await client.listTools()).tools.length,6);
+  assert.equal((await client.listTools()).tools.length,7);
   const result=await client.callTool({name:'research_query',arguments:{cursor:query.next_cursor,limit:1}});assert.ok(!result.isError);
   assert.deepEqual(result.structuredContent.results,JSON.parse(JSON.stringify(next.results.map(item=>({...item,open_url:null})))));checks.push('mcp_reads_same_service_snapshot');
   console.log(JSON.stringify({ok:true,profile:queryProfile.name,checks},null,2));

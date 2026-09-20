@@ -8,6 +8,7 @@ export interface TypeMeta {
 }
 
 export const TYPE_META: Record<string, TypeMeta> = {
+  tag: { label: '标签', dir: null, cssVar: '--accent', description: '连接具有共同标签的研究材料' },
   company: { label: '公司研究', dir: 'companies', cssVar: '--t-company', description: '商业模式、财务质量、竞争优势与投资论点' },
   macro: { label: '宏观研究', dir: 'macro', cssVar: '--t-macro', description: '增长、通胀、政策与资产传导机制' },
   event: { label: '事件跟踪', dir: 'events', cssVar: '--t-event', description: '公告、政策、业绩与催化剂的持续跟踪' },
@@ -55,6 +56,7 @@ export function typeColor(type: string | null | undefined): string {
 }
 
 export const RELATION_LABELS: Record<string, string> = {
+  has_entity: '提及实体', has_tag: '包含标签',
   about: '研究对象', belongs_to: '所属行业 / 主题', impacts: '影响对象', compares_with: '对比对象',
   supported_by: '支持证据',
   contradicted_by: '反驳证据',

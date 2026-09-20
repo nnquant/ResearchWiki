@@ -14,7 +14,8 @@ export function registerSearchRoutes(router) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new HttpError(400, 'limit 应在 1–50 之间');
     if (!Number.isInteger(offset) || offset < 0) throw new HttpError(400, 'offset 无效');
     const filters = combine(tagsFilter({ tags_all: url.searchParams.getAll('tags_all'), tags_any: url.searchParams.getAll('tags_any'), tags_none: url.searchParams.getAll('tags_none') }),
-      types.length ? { field: queryProfile.webTypeField, op: 'in', value: types } : null);
+      types.length ? { field: queryProfile.webTypeField, op: 'in', value: types } : null,
+      url.searchParams.get('entity_id') ? { field: 'entity_ids', op: 'contains_all', value: [url.searchParams.get('entity_id')] } : null);
     const controller = new AbortController();
     const cancel = () => { if (!res.writableEnded) controller.abort(); }; res.once('close', cancel);
     try {

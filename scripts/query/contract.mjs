@@ -65,6 +65,14 @@ export function filterSql(filter, params, alias = 'd') {
   if (filter.any) return '(' + filter.any.map(f => filterSql(f, params, alias)).join(' OR ') + ')';
   if (filter.not) return `(NOT ${filterSql(filter.not, params, alias)})`;
   const { field, op, value } = filter;
+  if (field === 'entity_ids') {
+    const exists = condition => `EXISTS(SELECT 1 FROM research_query.document_entities em WHERE em.document_id=${alias}.document_id AND em.revision_id=${alias}.revision_id${condition})`;
+    if (op === 'exists') return `(${exists('')} = ${bind(value)})`;
+    const list = bind(Array.isArray(value) ? value : [value]);
+    if (op === 'contains_all') return `NOT EXISTS(SELECT 1 FROM unnest(${list}::text[]) required(entity_id) WHERE NOT ${exists(' AND em.entity_id=required.entity_id')})`;
+    const expression = exists(` AND em.entity_id=ANY(${list}::text[])`);
+    return op === 'contains_none' ? `NOT ${expression}` : expression;
+  }
   const key = bind(field), json = `${alias}.metadata -> ${key}`, scalar = `${alias}.metadata ->> ${key}`;
   if (op === 'exists') return `((${json} IS NOT NULL AND ${json} <> 'null'::jsonb AND ${json} <> '[]'::jsonb AND ${json} <> '\"\"'::jsonb) = ${bind(value)})`;
   if (FIELDS[field] === 'array') {

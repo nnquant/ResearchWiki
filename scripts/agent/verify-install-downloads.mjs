@@ -27,7 +27,7 @@ assert.equal((await fetch(`${baseUrl}/api/research/query`, { signal: AbortSignal
 checks.push('research_api_still_requires_bearer');
 assert.equal((await fetch(`${baseUrl}/install/${share.id}/install-share.json`, { signal: AbortSignal.timeout(10000) })).status, 404);
 checks.push('private_manifest_not_exposed');
-const installed = spawnSync(process.execPath, [path.join(work, 'researchwiki-install.mjs'), '--target', path.join(work, 'researchwiki')],
+const installed = spawnSync(process.execPath, [path.join(work, 'researchwiki-install.mjs'), '--target', path.join(work, 'research-wiki')],
   { windowsHide: true, encoding: 'utf8', timeout: 30000 });
 assert.equal(installed.status, 0, '下载的安装器必须成功执行并通过实库连接验证');
 assert.ok(installed.stdout.includes('连接验证通过'));

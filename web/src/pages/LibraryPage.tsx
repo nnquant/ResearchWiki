@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { usePages, useTypes, useTags } from '../api/hooks';
+import { usePages } from '../api/hooks';
+import { useResearchFacets } from '../app/useResearchFacets';
 import { pageUrl } from '../api/client';
 import { useCrumbs } from '../app/UiContext';
 import { Loading, ErrorBlock, TypeBadge, StatusChip, Empty } from '../app/ui';
@@ -10,6 +11,7 @@ import { isEditableTarget } from '../lib/hotkeys';
 import { RESEARCH_STAGES } from '../lib/research';
 import { useUi } from '../app/UiContext';
 import { MultiTagFilter, readTagSelection, writeTagSelection } from '../app/MultiTagFilter';
+import { EntityFilter } from '../app/EntityFilter';
 
 const PAGE_SIZE = 50;
 
@@ -17,14 +19,14 @@ export function LibraryPage() {
   const { openNewPage } = useUi();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  const { data: types } = useTypes();
-  const { data: tags } = useTags();
+  const { types, tags, onTagSearch } = useResearchFacets(Boolean(params.get('entity_id')));
   const [focus, setFocus] = useState(-1);
 
   const type = params.get('type') ?? '';
   const title = type ? categoryLabel(type) : '资料库';
   useCrumbs(type ? [{ label: '资料库', to: '/library' }, { label: title }] : [{ label: '资料库' }]);
   const tag = params.get('tag') ?? '';
+  const entityId = params.get('entity_id') ?? '';
   const tagSelection = readTagSelection(params);
   const tagsKey = JSON.stringify(tagSelection);
   const status = params.get('status') ?? '';
@@ -41,6 +43,7 @@ export function LibraryPage() {
     const p = new URLSearchParams();
     if (type) p.set('type', type);
     if (tag) p.set('tag', tag);
+    if (entityId) p.set('entity_id', entityId);
     writeTagSelection(p, tagSelection);
     if (status) p.set('status', status);
     if (stage) p.set('stage', stage);
@@ -51,7 +54,7 @@ export function LibraryPage() {
     p.set('limit', String(PAGE_SIZE));
     p.set('offset', String((page - 1) * PAGE_SIZE));
     return p;
-  }, [type, tag, tagsKey, status, stage, due, q, sort, dir, page]);
+  }, [type, tag, tagsKey, status, stage, due, q, sort, dir, page, entityId]);
 
   const { data, isLoading, error, isFetching } = usePages(query);
   const items = data?.items ?? [];
@@ -95,11 +98,12 @@ export function LibraryPage() {
         {data?.degraded && <span className="chip warn">数据库不可用，显示磁盘索引</span>}
       </div>
 
+      <EntityFilter />
       <div className="filters">
         <form onSubmit={e => { e.preventDefault(); update({ q: draft.trim() || null }); }}>
           <input className="input" value={draft} onChange={e => setDraft(e.target.value)} placeholder="标题、代码、别名或地区…" aria-label="筛选" />
         </form>
-        <MultiTagFilter tags={tags ?? []} value={tagSelection} onChange={value => { const next = new URLSearchParams(params); writeTagSelection(next, value); next.delete('page'); setParams(next); }} />
+        <MultiTagFilter tags={tags ?? []} onSearch={onTagSearch} value={tagSelection} onChange={value => { const next = new URLSearchParams(params); writeTagSelection(next, value); next.delete('page'); setParams(next); }} />
         <button className="btn sm" onClick={() => { setDraft(''); setParams(new URLSearchParams()); }}>清除全部筛选</button>
         <select className="select" value={type} onChange={e => update({ type: e.target.value || null })} aria-label="研究分类">
           <option value="">全部研究分类</option>

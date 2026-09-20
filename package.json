@@ -9,6 +9,10 @@
   "scripts": {
     "research": "node scripts/agent/cli.mjs",
     "research:index": "node scripts/query/index.mjs",
+    "research:lexical-index": "node scripts/query/lexical-index.mjs",
+    "research:graph-index": "node scripts/query/graph-index.mjs",
+    "research:entities": "node scripts/query/entity-admin.mjs",
+    "research:entities:reconcile": "node scripts/query/reconcile-entities.mjs",
     "research:mcp": "node scripts/agent/mcp.mjs",
     "research:package": "node scripts/agent/package.mjs",
     "research:share": "node scripts/agent/publish-install.mjs",
@@ -24,7 +28,8 @@
     "defuddle": "^0.19.3",
     "gray-matter": "^4.0.3",
     "jsdom": "^27.4.0",
-    "postgres": "^3.4.9"
+    "postgres": "^3.4.9",
+    "ajv": "8.20.0"
   },
   "devDependencies": {
     "bun": "1.3.10"

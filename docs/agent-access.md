@@ -14,7 +14,7 @@ ResearchWiki 提供共享的条件查询、正文检索和版本化阅读服务�
 | 原生网络 MCP | `http://服务器:8020/mcp` | 支持 Streamable HTTP 和自定义 Bearer header 的 MCP 客户端 |
 | CLI | `RESEARCHWIKI_URL=http://服务器:8020` | Node.js 22+、轻量客户端文件、token |
 | stdio MCP 桥 | 同样的 URL/token 环境变量 | 轻量客户端和 MCP SDK |
-| Skill | `skills/researchwiki/SKILL.md` | 已配置上述任一连接；Skill 本身不是传输协议 |
+| Skill | `skills/research-wiki/SKILL.md` | 已配置上述任一连接；Skill 本身不是传输协议 |
 
 `8020` 是独立的研究只读服务，与 Wiki `8018`、内部 GBrain `3131` 区分。它在同一个 Wiki 进程中启动、停止，共享查询索引和游标；提供六个研究操作、`/mcp`、带鉴权的 `/health` 和 `/assets/`，以及维护者显式发布的安装资源。不会注册 Wiki 状态、编辑、导入或管理接口。除下述分享链接外均校验 Bearer，CSRF token 不能代替身份认证。
 
@@ -107,7 +107,7 @@ node scripts/agent/cli.mjs query --request query.json
 
 ## MCP 与 Skill
 
-`node scripts/setup-mcp.mjs` 生成当前项目的 `config/mcp.json`，其中绝对路径指向 `scripts/mcp-stdio.mjs`。该稳定入口现在提供六个研究工具：
+`node scripts/setup-mcp.mjs` 生成当前项目的 `config/mcp.json`，其中绝对路径指向 `scripts/mcp-stdio.mjs`。该稳定入口现在提供七个只读研究工具：
 
 | 工具 | 使用场景 |
 | --- | --- |
@@ -117,14 +117,15 @@ node scripts/agent/cli.mjs query --request query.json
 | research_search | 过滤范围内的相关文档/段落发现 |
 | research_read | 指定版本的元数据、目录、页、正文块及原文查找 |
 | research_related | 前置字段中明确记录的有向研究关系，最多两跳 |
+| research_graph | 实体/标签/材料局部邻接图、范围概览、共同材料交集 |
 
-旧客户端需重连 MCP 以刷新工具清单。内部 GBrain HTTP MCP 继续独立存在；远程 Agent 使用 8020 的专用 ResearchWiki Streamable HTTP MCP。本机 stdio 和远程 stdio 桥仍受支持，六个工具定义与网络入口一致。
+旧客户端需重连 MCP 以刷新工具清单。内部 GBrain HTTP MCP 继续独立存在；远程 Agent 使用 8020 的专用 ResearchWiki Streamable HTTP MCP。本机 stdio 和远程 stdio 桥仍受支持，七个工具定义与网络入口一致。resolve 新增 kind=entity，query/search 新增 entity_ids 筛选；使用方式见 [实体与图谱](entity-graph-agent.md)。
 
-仓库提供 [researchwiki Skill](../skills/researchwiki/SKILL.md)。在目标 Agent 的技能配置中安装/引用这个目录即可；本次不会改动用户全局客户端配置。
+仓库提供 [research-wiki Skill](../skills/research-wiki/SKILL.md)。在目标 Agent 的技能配置中安装/引用这个目录即可；本次不会改动用户全局客户端配置。
 
 ## 查询契约
 
-HTTP：`POST /api/research/{describe|resolve|query|search|read|related}`。远程在 8020 专用入口使用 Bearer token；本机旧入口 8018 仍兼容同一只读凭据，网页继续使用既有 CSRF 机制。两个端口均保留 Host/Origin 检查；远程服务额外支持配置的 HTTPS 对外域名。
+HTTP：`POST /api/research/{describe|resolve|query|search|read|related|graph}`。远程在 8020 专用入口使用 Bearer token；本机旧入口 8018 仍兼容同一只读凭据，网页继续使用既有 CSRF 机制。两个端口均保留 Host/Origin 检查；远程服务额外支持配置的 HTTPS 对外域名。
 
 ```json
 {
@@ -145,8 +146,8 @@ HTTP：`POST /api/research/{describe|resolve|query|search|read|related}`。远�
 
 ## 原文与检索边界
 
-- lexical：Intl.Segmenter 中英分词 + PostgreSQL 全文索引 + 标题短语优先，不调用模型；它不是 BM25。
-- hybrid：增加已有 bge-m3 向量的条件内精确扫描，再做 RRF。保持与当前模型/维度匹配，跳过明显落后的页面向量；超时会保留已得到的关键词结果并报告降级。
+- lexical：Intl.Segmenter 中英分词，保留任一词项匹配；先用当前版本的文档级 GIN 索引召回，按正文匹配词数和标题/元数据得分选文档，再在文档内选片段，不调用模型，也不是 BM25。`query_plan.lexical_strategy`、`matched_documents` 和 `candidate_truncated` 说明候选策略与截断；这是文档优先的两阶段排序，不保证与旧版全库片段排序一致。
+- hybrid：增加已有 bge-m3 向量的条件内精确扫描，再做 RRF。保持与当前模型/维度匹配，跳过明显落后的页面向量；embedding 与向量查询共享 5 秒的可选阶段预算，超时会保留已得到的关键词结果并报告降级。
 - deep：当前扩大候选数量。尚未配置生成式查询扩展和交叉编码器重排，响应会明确告知，不能视为已实现这些模型能力。
 - 搜索按照文档默认去重，可选择 document_family 或 passage；译文与原文共享家族。文档级语义/标题命中可能没有可对齐的证据块，这时需要先读取目录。
 - read 返回索引中保存的明确版本；原文块包含起止 UTF-16 字符偏移、章节和解析器物理页码。块可能切开超长表格，使用 neighbors 或继续读取恢复上下文；不猜印刷页码。
@@ -154,6 +155,10 @@ HTTP：`POST /api/research/{describe|resolve|query|search|read|related}`。远�
 - 独立 Wiki 页同路径原子编辑以及同 inode 重命名维持 ID；跨路径复制再删除且没有显式文献身份，不能自动证明是同一页。
 
 ## 验证与后续评测
+
+升级到文档级召回索引时，维护者先运行 `npm run research:lexical-index` 回填派生投影，再重启服务；如果回填期间仍有旧进程索引材料，重启后再次运行该命令补齐差异。该命令可重复执行，不修改原文或旧引用版本。新索引任务在同一个事务内更新文档、正文版本和召回投影，`coverage.lexical_pending` 显示尚未更新的材料数。
+
+query 游标保存轻量的材料 ID、版本、排序和实体成员快照，每次翻页只读取该页的固定版本元数据；保持原有游标语义，不长期持有数据库事务。read 的 metadata/outline 不再传输整篇正文。研究读取使用独立 4 连接池，排队支持超时取消；`explain=true` 返回覆盖率、候选 SQL、证据补全及排队计时。慢请求和错误写入 `[research-request]` 日志，仅记录操作名、耗时和错误码，不记录查询正文或 token。
 
 ```powershell
 node --test tests/query-contract.test.mjs

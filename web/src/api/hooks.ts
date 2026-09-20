@@ -39,16 +39,20 @@ export function useBootStatus() {
   return useQuery({ queryKey: keys.status, queryFn: () => loadStatus(), staleTime: 2000 });
 }
 
-export function useIndex() {
-  return useQuery({ queryKey: keys.index, queryFn: () => api<IndexEntry[]>('/api/index'), staleTime: 60_000 });
+export function useIndex(enabled = true) {
+  return useQuery({ queryKey: keys.index, queryFn: () => api<IndexEntry[]>('/api/index'), staleTime: 60_000, enabled });
 }
 
-export function useTypes() {
-  return useQuery({ queryKey: keys.types, queryFn: () => api<TypeCount[]>('/api/types'), staleTime: 60_000 });
+export function useGraphNavigation(enabled: boolean) {
+  return useQuery({ queryKey: ['graph', 'navigation'], queryFn: () => api<{ items: IndexEntry[]; counts: Record<string, number> }>('/api/graph-navigation'), staleTime: 30_000, enabled });
 }
 
-export function useTags() {
-  return useQuery({ queryKey: keys.tags, queryFn: () => api<TagCount[]>('/api/tags'), staleTime: 60_000 });
+export function useTypes(enabled = true) {
+  return useQuery({ queryKey: keys.types, queryFn: () => api<TypeCount[]>('/api/types'), staleTime: 60_000, enabled });
+}
+
+export function useTags(enabled = true) {
+  return useQuery({ queryKey: keys.tags, queryFn: () => api<TagCount[]>('/api/tags'), staleTime: 60_000, enabled });
 }
 
 export function useHome() {
@@ -94,16 +98,18 @@ export interface SearchParams {
   tags_all?: string[];
   tags_any?: string[];
   tags_none?: string[];
+  entity_id?: string;
   cursor?: string;
 }
 
-export function useSearch({ q, mode, types = [], limit = 20, tags_all = [], tags_any = [], tags_none = [], cursor }: SearchParams, enabled = true) {
+export function useSearch({ q, mode, types = [], limit = 20, tags_all = [], tags_any = [], tags_none = [], entity_id, cursor }: SearchParams, enabled = true) {
   const typesKey = types.join(',');
   return useQuery({
-    queryKey: [...keys.search(q, mode, typesKey, limit), JSON.stringify([tags_all, tags_any, tags_none]), cursor ?? ''],
+    queryKey: [...keys.search(q, mode, typesKey, limit), JSON.stringify([tags_all, tags_any, tags_none]), entity_id ?? '', cursor ?? ''],
     queryFn: ({ signal }) => {
       const params = new URLSearchParams({ q, mode, limit: String(limit) });
       if (typesKey) params.set('types', typesKey);
+      if (entity_id) params.set('entity_id', entity_id);
       for (const [key, values] of Object.entries({ tags_all, tags_any, tags_none })) values.forEach(t => params.append(key, t));
       if (cursor) params.set('cursor', cursor);
       return api<SearchResponse>(`/api/search?${params}`, { signal });
@@ -135,6 +141,24 @@ export function useGraph(slug: string | undefined, depth: number, linkTypes: str
     },
     enabled: Boolean(slug),
     staleTime: 30_000,
+  });
+}
+
+export function useTagGraph(params: URLSearchParams) {
+  const key = params.toString();
+  return useQuery({
+    queryKey: ['graph', 'tags', key],
+    queryFn: ({ signal }) => api<Graph>(`/api/graph?${key}`, { signal }),
+    staleTime: 30_000,
+  });
+}
+
+export function useGraphTags(q: string, enabled = true) {
+  return useQuery({
+    queryKey: ['graph', 'tag-options', q],
+    queryFn: ({ signal }) => api<{ tags: TagCount[]; total: number }>(`/api/graph-tags?${new URLSearchParams({ q })}`, { signal }),
+    staleTime: 30_000,
+    enabled,
   });
 }
 

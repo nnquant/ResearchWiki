@@ -7,6 +7,7 @@ const NAV = [
   { to: '/', label: '研究工作台', end: true },
   { to: '/library', label: '资料库' },
   { to: '/search', label: '检索' },
+  { to: '/graph', label: '图谱' },
   { to: '/import', label: '导入' },
   { to: '/status', label: '状态' },
 ];

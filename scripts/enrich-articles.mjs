@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import matter from 'gray-matter';
 import { manifest, dataPath, repo, sha, atomicJson, readJson, now, config, gb, run, bun, runtimeEnv, withLock, withIngestPriority, manifestPath, assetUrl } from './common.mjs';
 import { analyzeArticle, estimateTokens, PROMPT_VERSION } from './article-llm.mjs';
+import { OUTPUT_SCHEMA_VERSION } from './article-output-schema.mjs';
 import { readPage, writePage } from './server/wiki-files.mjs';
 import { getSql, closeDb } from './server/db.mjs';
 import { articleMetadataOf } from './article-metadata.mjs';
@@ -119,7 +120,7 @@ export async function stageMetadataArticle(record, cfg, staging, {shouldPause}={
   const page=await readPage(record.wiki_slug);if(!page)throw new Error('原文 Wiki 页面不存在');
   const folder=path.join(staging,record.id);
   const previous=await readJson(path.join(folder,'result.json'),null);
-  if(previous?.status==='staged' && previous.revision===record.revision && previous.input_sha256===sha(source) && previous.model===cfg.model && previous.endpoint===cfg.baseUrl && previous.thinking===(cfg.thinking??null) && previous.prompt_version===PROMPT_VERSION) {
+  if(previous?.status==='staged' && previous.revision===record.revision && previous.input_sha256===sha(source) && previous.model===cfg.model && previous.endpoint===cfg.baseUrl && previous.thinking===(cfg.thinking??null) && previous.prompt_version===PROMPT_VERSION && (cfg.structuredOutputs!=='json_schema'||previous.output_schema_version===OUTPUT_SCHEMA_VERSION)) {
     const staged=await fs.readFile(path.join(folder,'wiki',record.wiki_slug+'.md'),'utf8').catch(()=>null);
     if(staged && (page.hash===previous.base_page_hash || page.hash===sha(staged))) return previous;
   }
@@ -133,6 +134,7 @@ export async function stageMetadataArticle(record, cfg, staging, {shouldPause}={
   await fs.writeFile(path.join(wiki,record.id+'.md'),matter.stringify('',fm).replace(/\n*$/,'\n')+page.body,'utf8');
   const artifact={status:'staged',document_id:record.id,title:record.title,revision:record.revision,wiki_slug:record.wiki_slug,translation_slug:null,translation_mode:'skipped',entities_only:entitiesOnly,entity_version:analysis.entity_version,model:cfg.model,endpoint:cfg.baseUrl,thinking:cfg.thinking??null,prompt_version:PROMPT_VERSION,processing_version:ENRICHMENT_VERSION,input_sha256:sha(source),base_page_hash:page.hash,previous_tags:page.frontmatter.tags ?? [],metadata:analysis.metadata,evidence:analysis.evidence,discarded:analysis.discarded,analysis_path:path.resolve(dataPath(),analysis.report_path),completed_at:now()};
   Object.assign(artifact,{expectations_only:expectationsOnly,supplemental,expectations_version:analysis.expectations_version,...(analysis.usage_summary?{usage_summary:analysis.usage_summary}:{})});
+  if(cfg.structuredOutputs==='json_schema')artifact.output_schema_version=OUTPUT_SCHEMA_VERSION;
   await atomicJson(path.join(folder,'result.json'),artifact);return artifact;
 }
 

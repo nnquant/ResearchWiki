@@ -14,6 +14,7 @@ import { NotFound } from './pages/NotFound';
 
 const GraphPage = lazy(() => import('./pages/GraphPage').then(m => ({ default: m.GraphPage })));
 const EditorPage = lazy(() => import('./pages/EditorPage').then(m => ({ default: m.EditorPage })));
+const EntityGovernancePage = lazy(() => import('./pages/EntityGovernancePage').then(m => ({ default: m.EntityGovernancePage })));
 
 function Lazy({ children }: { children: ReactNode }) {
   return <Suspense fallback={<div className="content-inner"><Loading /></div>}>{children}</Suspense>;
@@ -61,6 +62,7 @@ const router = createBrowserRouter([
       { path: 'page/*', element: <PageView /> },
       { path: 'edit/*', element: <Lazy><EditorPage /></Lazy> },
       { path: 'graph/*', element: <Lazy><GraphPage /></Lazy> },
+      { path: 'entities', element: <Lazy><EntityGovernancePage /></Lazy> },
       { path: 'library', element: <LibraryPage /> },
       { path: 'search', element: <SearchPage /> },
       { path: 'import', element: <ImportPage /> },

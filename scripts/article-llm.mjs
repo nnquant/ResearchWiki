@@ -9,6 +9,7 @@ import { ENTITY_FIELDS, ENTITY_VERSION } from './article-entities.mjs';
 import { requireDeepseekOffPeak } from './deepseek-off-peak.mjs';
 import { evidenceText, parseArticleJson, normalizeArticleResponse } from './article-response.mjs';
 import {EXPECTATIONS_FIELD,EXPECTATIONS_VERSION,groundAnalystExpectations,expectationInstructions,expectationExample} from './analyst-expectations.mjs';
+import {articleOutputSchema,schemaResponseFormat,validateOutputSchema,OUTPUT_SCHEMA_VERSION} from './article-output-schema.mjs';
 
 export const PROMPT_VERSION = 'article-fields-v11-output-groups';
 const excluded = new Set(['personal_rating', 'review_status']);
@@ -128,7 +129,9 @@ export function validateArticleResult(parsed, text, {requiredFields=[],requireEn
   return checked;
 }
 
-async function completion(cfg, user, file, validate = () => {}, requestSystem = system) {
+async function completion(cfg, user, file, validate = () => {}, requestSystem = system, outputSchema = null) {
+  const strictSchema=cfg.structuredOutputs==='json_schema'?(outputSchema??articleOutputSchema()):null;
+  const check=result=>{if(strictSchema)validateOutputSchema(result,strictSchema);return validate(result);};
   let feedback='',previousContent='';
   for(let attempt=1;attempt<=2;attempt++) {
     const saved=await readJson(file.replace(/\.json$/, '-attempt-'+attempt+'.json'),null);
@@ -136,7 +139,7 @@ async function completion(cfg, user, file, validate = () => {}, requestSystem = 
     if(saved?.choices?.[0]?.finish_reason!=='stop')continue;
     try {
       const parsed=parseArticleJson(saved.choices[0].message.content).value;
-      validate(parsed);return {parsed,usage:saved.usage??null};
+      check(parsed);return {parsed,usage:saved.usage??null};
     } catch(error) {feedback=error.feedback??'上次保存的JSON格式无效，请严格输出完整合法JSON。';previousContent=saved.choices[0].message.content??'';}
   }
   for(let attempt=1;attempt<=2;attempt++) {
@@ -154,16 +157,18 @@ async function completion(cfg, user, file, validate = () => {}, requestSystem = 
       const response=await fetch(cfg.baseUrl.replace(/\/$/,'')+'/chat/completions',{
         method:'POST',redirect:'error',signal:AbortSignal.timeout(cfg.requestTimeoutMs??600000),
         headers:{authorization:'Bearer '+cfg.apiKey,'content-type':'application/json'},
-        body:JSON.stringify({model:cfg.model,messages,temperature:0.1,max_tokens:Math.min((cfg.maxOutputTokens??6000)*attempt,16000),response_format:{type:'json_object'},...(cfg.thinking?{thinking:{type:cfg.thinking},...(cfg.reasoningEffort?{reasoning_effort:cfg.reasoningEffort}:{})}:{chat_template_kwargs:{enable_thinking:false}})}),
+        body:JSON.stringify({model:cfg.model,messages,temperature:0.1,max_tokens:Math.min((cfg.maxOutputTokens??6000)*attempt,16000),response_format:strictSchema?schemaResponseFormat(strictSchema):{type:'json_object'},...(cfg.thinking?{thinking:{type:cfg.thinking},...(cfg.reasoningEffort?{reasoning_effort:cfg.reasoningEffort}:{})}:{chat_template_kwargs:{enable_thinking:false}})}),
       });
       if(!response.ok) {
         const detail=await response.text();
         if([400,413,422].includes(response.status)&&/context.{0,40}(length|window|limit)|maximum.{0,30}(token|length)|too many tokens|input.{0,30}too long/is.test(detail))throw Object.assign(new Error('模型服务端上下文窗口不足'),{code:'CONTEXT_LENGTH'});
+        if(strictSchema&&[400,404,422].includes(response.status))throw Object.assign(new Error('服务拒绝结构化输出 schema（HTTP '+response.status+'），已停止，未降级为普通 JSON'),{code:'STRUCTURED_OUTPUT_CONFIG',httpStatus:response.status});
         throw Object.assign(new Error('模型请求失败（HTTP '+response.status+'）'),{httpStatus:response.status});
       }
       result=await response.json();
       }
       result.request_timing={started_at:new Date(started).toISOString(),seconds:(Date.now()-started)/1000,attempt};
+      if(strictSchema)result.structured_output={type:'json_schema',schema_version:OUTPUT_SCHEMA_VERSION,schema_sha256:sha(JSON.stringify(strictSchema))};
       await atomicJson(file.replace(/\.json$/, '-attempt-'+attempt+'.json'),result);
       previousContent=result.choices?.[0]?.message?.content??'';
       if(result.choices?.[0]?.finish_reason!=='stop')throw outputLimitError();
@@ -172,7 +177,7 @@ async function completion(cfg, user, file, validate = () => {}, requestSystem = 
         result.format_repairs=['escaped_literal_control_characters'];
         await atomicJson(file.replace(/\.json$/, '-attempt-'+attempt+'.json'),result);
       }
-      validate(parsed);
+      check(parsed);
       return {parsed,usage:result.usage??null};
     } catch(error) {
       if(['CONTEXT_LENGTH','OFF_PEAK_WAIT','CODEBUDDY_CONFIG','OUTPUT_LIMIT'].includes(error.code))throw error;
@@ -191,9 +196,10 @@ export async function analyzeArticle(record, text, { config: override, cacheRoot
   if (!cfg) return null;
   let requestSystem=expectationsOnly?'你是投资研究文献整理员。'+commonRules+'本次只补抽 analyst_expectations，不输出或改写既有摘要、标签、研究对象。输出 metadata 和空的顶层 evidence 数组。':entitiesOnly?(requireExpectations?'你是投资研究文献整理员。'+commonRules+'本次同时补抽研究对象和分析师预期，其他字段不输出。'+entityInstructions:entitySystem):system;
   if(!entitiesOnly||requireExpectations)requestSystem+='\n'+expectationInstructions+'\nanalyst_expectations 使用其自身内嵌 evidence，不在顶层 evidence 重复。其条数按本专门说明执行。以下仅是结构示例，不可套用示例数字或公司：'+JSON.stringify({metadata:expectationExample,evidence:[]});
+  const outputSchema=articleOutputSchema({fields:expectationsOnly?[EXPECTATIONS_FIELD]:entitiesOnly?[...ENTITY_FIELDS,...(requireExpectations?[EXPECTATIONS_FIELD]:[])]:undefined});
   const inputHash = sha(text);
   const plan = planArticle(text, cfg,requestSystem);
-  const cacheKey = sha(JSON.stringify({ inputHash, transport:cfg.transport, model: cfg.model, endpoint: cfg.baseUrl, thinking: cfg.thinking, reasoningEffort: cfg.reasoningEffort, version: PROMPT_VERSION, schema: fields, entitiesOnly, requireEntities,expectationsOnly,requireExpectations, mode: plan.mode, ranges: plan.parts.map(p => [p.start, p.end]) })).slice(0, 20);
+  const cacheKey = sha(JSON.stringify({ inputHash, transport:cfg.transport, model: cfg.model, endpoint: cfg.baseUrl, thinking: cfg.thinking, reasoningEffort: cfg.reasoningEffort, version: PROMPT_VERSION, schema: fields,...(cfg.structuredOutputs==='json_schema'?{output_schema_version:OUTPUT_SCHEMA_VERSION,output_schema:outputSchema}:{}), entitiesOnly, requireEntities,expectationsOnly,requireExpectations, mode: plan.mode, ranges: plan.parts.map(p => [p.start, p.end]) })).slice(0, 20);
   const folder = path.join(cacheRoot ?? dataPath('state', 'llm'), record.id, record.revision, cacheKey);
   const cached = await readJson(path.join(folder, 'result.json'), null);
   if (cached?.status === 'complete' && requiredFields.every(key => cached.metadata?.[key] != null)) {
@@ -215,7 +221,7 @@ export async function analyzeArticle(record, text, { config: override, cacheRoot
         if(cfg.forceOutputGroups||await readJson(path.join(folder,'output-groups.json'),null))throw outputLimitError();
         response = await completion(cfg, `文章标题：${record.title}\n${plan.mode === 'fulltext' ? '以下是文章全文，请通读后一次提取字段。' : `全文第 ${i + 1}/${parts.length} 段，起始文件页号：${parts[i].start_page ?? '见正文标记'}。只提取本段有依据的内容。`}\n<document>\n${parts[i].text}\n</document>\n${requiredFields.length ? `输出前检查：必须填写 ${requiredFields.join('、')}，且每个字段必须有 field 同名的 evidence。尤其 summary 必须有 field="summary" 的原文逐字引文与文件页号，否则中文摘要将被丢弃。key_findings 的重要数字用原文证据支持；companies、industries、subfields 每项都用 {name,quote,page}，不要遗漏内嵌引文与文件页号。` : ''}`, file, parsed => {
           validateArticleResult(parsed,text,{requiredFields,entitiesOnly,requireEntities,expectationsOnly,requireExpectations});
-        }, requestSystem);
+        }, requestSystem, outputSchema);
       } catch (error) {
         if(error.code==='OUTPUT_LIMIT') {
           console.log('LLM：输出超长，按字段分组；每组仍读取完整全文');
@@ -230,7 +236,7 @@ export async function analyzeArticle(record, text, { config: override, cacheRoot
             const groupSystem=requestSystem+'\n本次执行字段分组 '+spec.id+'，这是总任务的一个子集，覆盖上述完整输出要求：metadata 只允许 '+spec.fields.join('、')+'，其他字段本次不要输出。'+spec.instruction+'只输出紧凑JSON，不要解释，每条引文尽量控制在100字符内。'+(roster?.length?'已核对的主要公司标识如下，分析师预期请沿用这些名称和代码：'+JSON.stringify(roster):'');
             planArticle(text,cfg,groupSystem);
             console.log('LLM：字段组 '+spec.id);
-            return completion({...cfg,maxResponseCharacters:spec.children.length?14000:10000},`文章标题：${record.title}\n请完整阅读以下全文，只输出本次 ${spec.id} 字段组。\n<document>\n${text}\n</document>`,path.join(folder,'group-'+spec.id+'.response.json'),parsed=>groupValidate(parsed,spec),groupSystem);
+            return completion({...cfg,maxResponseCharacters:spec.children.length?14000:10000},`文章标题：${record.title}\n请完整阅读以下全文，只输出本次 ${spec.id} 字段组。\n<document>\n${text}\n</document>`,path.join(folder,'group-'+spec.id+'.response.json'),parsed=>groupValidate(parsed,spec),groupSystem,articleOutputSchema({fields:spec.fields,groupId:spec.id}));
           }});
           validateArticleResult(grouped,text,{requiredFields,entitiesOnly,requireEntities,expectationsOnly,requireExpectations});
           part={...grouped,output_mode:'field_groups',usage:null};

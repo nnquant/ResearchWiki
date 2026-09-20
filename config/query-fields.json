@@ -20,5 +20,6 @@
   "published_at": "date",
   "data_as_of": "date",
   "ingested_at": "date",
-  "updated_at": "date"
+  "updated_at": "date",
+  "entity_ids": "array"
 }

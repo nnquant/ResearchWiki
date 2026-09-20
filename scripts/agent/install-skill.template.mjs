@@ -10,7 +10,7 @@ try {
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('需要 Node.js 22 或更新版本');
   const args = process.argv.slice(2);
   if (args.length && !(args.length === 2 && args[0] === '--target')) throw new Error('用法：node researchwiki-install.mjs [--target 技能目录]');
-  const target = path.resolve(args[1] ?? path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'skills', 'researchwiki'));
+  const target = path.resolve(args[1] ?? path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'skills', 'research-wiki'));
   const marker = path.join(target, '.researchwiki-installed.json');
   let existing;
   try { existing = await fs.lstat(target); } catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -18,7 +18,7 @@ try {
     if (!existing.isDirectory() || existing.isSymbolicLink()) throw new Error('目标必须是普通目录，不能是符号链接');
     const entries = await fs.readdir(target);
     const owned = await fs.readFile(marker, 'utf8').then(JSON.parse).catch(() => null);
-    if (entries.length && owned?.installer !== 'researchwiki-share-v1') throw new Error('目标已有其他内容，未覆盖。请用 --target 指定新的 researchwiki 目录');
+    if (entries.length && owned?.installer !== 'researchwiki-share-v1') throw new Error('目标已有其他内容，未覆盖。请用 --target 指定新的 research-wiki 目录');
   }
   await fs.mkdir(target, { recursive: true, mode: 0o700 });
   // Verify every output path before overwriting an installation managed by this installer.

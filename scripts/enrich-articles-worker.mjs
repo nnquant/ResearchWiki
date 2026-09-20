@@ -10,14 +10,20 @@ import {serviceFailureKind,serviceErrorDetails,serviceRecoveryState,waitForArtic
 import {EXPECTATIONS_VERSION} from './analyst-expectations.mjs';
 import {articleConcurrency,startArticleBatch} from './article-concurrency.mjs';
 import {REPORT_PRIORITY_ORDER} from './report-priority.mjs';
+import {higherPriorityUnparsed} from './report-discovery.mjs';
+import {loadArticleRuntime,selectArticleRuntime} from './article-runtime.mjs';
+import {OUTPUT_SCHEMA_VERSION} from './article-output-schema.mjs';
 
 const args=process.argv.slice(2),option=(k,f)=>args.includes(k)?args[args.indexOf(k)+1]:f;
 const staging=path.resolve(option('--output',path.join(repo,'work','article-metadata-batch')));
 const stateDir=dataPath('state','article-enrichment');
 const pauseFile=path.join(stateDir,'pause'),lockFile=path.join(stateDir,'worker.lock');
-const cfg=await readJson(path.resolve(option('--config',path.join(repo,'work','article-llm.json'))),null);
-if(!cfg?.model||!cfg.baseUrl||(cfg.transport==='codebuddy-cli'?!cfg.cliPath:!cfg.apiKey))throw new Error('缺少 LLM 配置');
-const concurrency=articleConcurrency(option('--concurrency',cfg.concurrency??1));
+const runtimeSettings=await loadArticleRuntime(path.resolve(option('--config',path.join(repo,'work','article-llm.json'))));
+if(!runtimeSettings.single&&args.includes('--concurrency'))throw new Error('时段调度已固定官方 16 路、自建 1 路，不接受全局并发覆盖');
+let runtime=selectArticleRuntime(runtimeSettings),cfg=runtime.cfg;
+let concurrency=articleConcurrency(option('--concurrency',runtime.concurrency));
+const runtimeChanged=()=>selectArticleRuntime(runtimeSettings).name!==runtime.name;
+const watchReports=args.includes('--watch-reports')||runtimeSettings.watchReports;
 await fs.mkdir(stateDir,{recursive:true});
 const lock=await fs.open(lockFile,'wx');
 await lock.writeFile(JSON.stringify({pid:process.pid,started_at:now(),mode:'metadata_only',concurrency}));
@@ -25,7 +31,8 @@ let stopping=false;
 process.on('SIGTERM',()=>{stopping=true;});process.on('SIGINT',()=>{stopping=true;});
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const states=await readJson(path.join(stateDir,'documents.json'),{});
-const provider={transport:cfg.transport??'openai-compatible',model:cfg.model,endpoint:cfg.baseUrl,thinking:cfg.thinking ?? null,processing_version:ENRICHMENT_VERSION,expectations_version:EXPECTATIONS_VERSION};
+const providerOf=cfg=>({transport:cfg.transport??'openai-compatible',model:cfg.model,endpoint:cfg.baseUrl,thinking:cfg.thinking ?? null,structured_outputs:cfg.structuredOutputs??'json_object',output_schema_version:cfg.structuredOutputs==='json_schema'?OUTPUT_SCHEMA_VERSION:null,processing_version:ENRICHMENT_VERSION,expectations_version:EXPECTATIONS_VERSION});
+let provider=providerOf(cfg);
 const recoveryFile=path.join(stateDir,'service-recovery.json');
 let recovery=await readJson(recoveryFile,null);
 if(recovery&&(recovery.model!==cfg.model||recovery.endpoint!==cfg.baseUrl))recovery=null;
@@ -40,7 +47,7 @@ if(!recovery&&previousStatus?.phase==='needs_attention'&&previousStatus.model===
     await atomicJson(recoveryFile,recovery);
   }
 }
-const base={pid:process.pid,mode:'metadata_only',concurrency,translation_enabled:false,entity_version:ENTITY_VERSION,...provider,off_peak_only:Boolean(cfg.offPeakOnly),order:REPORT_PRIORITY_ORDER,started_at:now()};
+const base={pid:process.pid,mode:'metadata_only',concurrency,translation_enabled:false,entity_version:ENTITY_VERSION,...provider,off_peak_only:Boolean(cfg.offPeakOnly),runtime_profile:runtime.name,automatic_peak_switch:!runtimeSettings.single,order:REPORT_PRIORITY_ORDER,started_at:now()};
 let success=0,failed=0,indexRetries=0,serviceWaits=0,queue=[];
 const activeArticles=new Map();
 let needsAttention=null;
@@ -61,7 +68,21 @@ async function publishWhenAvailable(folder) {
   }
 }
 try {
-  while(!needsAttention&&!await paused()) {
+  while(!await paused()) {
+    if(needsAttention) {
+      if(runtimeSettings.single)break;
+      // A provider/account failure must not disable the next scheduled provider.
+      if(!runtimeChanged()){await status('needs_attention',needsAttention);await sleep(30000);continue;}
+      needsAttention=null;
+    }
+    // Change providers only after all jobs in the previous bounded group have drained.
+    if(runtimeChanged()) {
+      runtime=selectArticleRuntime(runtimeSettings);cfg=runtime.cfg;concurrency=runtime.concurrency;provider=providerOf(cfg);
+      Object.assign(base,provider,{concurrency,off_peak_only:Boolean(cfg.offPeakOnly),runtime_profile:runtime.name});
+      recovery=null;await fs.rm(recoveryFile,{force:true});
+      await status('provider_switched');
+      console.log(JSON.stringify({at:now(),phase:'provider_switched',profile:runtime.name,...provider,concurrency}));
+    }
     const window=cfg.offPeakOnly?deepseekOffPeakWindow(Date.now(),cfg.requestTimeoutMs??600000):{allowed:true};
     if(!window.allowed) {
       await status('waiting_off_peak',{next_resume_at:window.nextResumeAt});
@@ -69,16 +90,17 @@ try {
       continue;
     }
     // Freeze each bounded extraction group; publication remains serial under the ingest lock.
-    queue=orderedArticles(Object.values((await manifest()).documents));
+    const catalogue=Object.values((await manifest()).documents);
+    queue=orderedArticles(catalogue);
     if(recovery) {
       const document=queue.find(d=>d.id===recovery.document_id);
       const active={id:recovery.document_id,title:document?.title};
-      const outcome=await waitForArticleService(cfg,recovery,{shouldPause:paused,onUpdate:async current=>{
+      const outcome=await waitForArticleService(cfg,recovery,{shouldPause:async()=>await paused()||runtimeChanged(),onUpdate:async current=>{
         recovery=current;
         await atomicJson(recoveryFile,current);
         await status('waiting_service',{active,pending:enrichmentQueue(queue,states,cfg,ENRICHMENT_VERSION).unfinished.length,next_probe_at:current.next_probe_at,probe_attempt:current.attempt,error:current.error,error_details:current.error_details});
       }});
-      if(outcome.kind==='paused')break;
+      if(outcome.kind==='paused'){if(await paused())break;continue;}
       if(outcome.kind==='fatal') {
         await status('needs_attention',{active,error:outcome.error.message,error_details:serviceErrorDetails(outcome.error)});break;
       }
@@ -88,19 +110,28 @@ try {
       continue;
     }
     const {unfinished,ready:pending,nextRetryAt}=enrichmentQueue(queue,states,cfg,ENRICHMENT_VERSION);
+    if(watchReports) {
+      const discovery=await readJson(dataPath('state','report-discovery','status.json'),null);
+      const parseRetry=await readJson(path.join(stateDir,'parse-retry.json'),null);
+      const newer=higherPriorityUnparsed({pending:[...(discovery?.pending??[]),...(parseRetry?.pending??[])]},catalogue,pending[0]);
+      if(!discovery||discovery.phase==='scanning'||newer) {
+        await status('waiting_latest_parse',{pending:unfinished.length,awaiting_report:newer,discovery_phase:discovery?.phase??'not_started'});
+        await sleep(3000);continue;
+      }
+    }
     await atomicJson(path.join(stateDir,'queue.json'),{updated_at:now(),order:base.order,documents:unfinished.map(d=>({id:d.id,title:d.title,date:d.article_metadata?.published_at||d.published_at||d.source_meta?.sort_date||null}))});
-    if(!unfinished.length){await status('completed',{pending:0});break;}
+    if(!unfinished.length){await status(watchReports?'watching_reports':'completed',{pending:0});if(watchReports){await sleep(5000);continue;}break;}
     if(!pending.length){await status('waiting_index_retry',{pending:unfinished.length,next_retry_at:nextRetryAt});await sleep(Math.min(30000,Math.max(1000,Date.parse(nextRetryAt)-Date.now())));continue;}
     let batchHalt=false;
     const activeOf=record=>({id:record.id,title:record.title,date:record.article_metadata?.published_at||record.published_at||record.source_meta?.sort_date||null});
-    const batch=startArticleBatch(pending,{concurrency,shouldPause:async()=>batchHalt||await paused(),onStart:async record=>{
+    const batch=startArticleBatch(pending,{concurrency,shouldPause:async()=>batchHalt||runtimeChanged()||await paused(),onStart:async record=>{
       activeArticles.set(record.id,{...activeOf(record),phase:'extracting'});
       states[record.id]={status:'processing',revision:record.revision,entity_version:ENTITY_VERSION,...provider,index_attempts:states[record.id]?.index_attempts??0,service_attempts:states[record.id]?.service_attempts??0,started_at:now()};
       await atomicJson(path.join(stateDir,'documents.json'),states);
       await status('extracting',{pending:unfinished.length});
       console.log(JSON.stringify({at:now(),phase:'extracting',...activeOf(record),concurrency}));
     },stage:async record=>{
-      const staged=await stageMetadataArticle(record,cfg,staging,{shouldPause:async()=>batchHalt||await paused()});
+      const staged=await stageMetadataArticle(record,cfg,staging,{shouldPause:async()=>batchHalt||runtimeChanged()||await paused()});
       activeArticles.set(record.id,{...activeOf(record),phase:'staged'});
       await status('extracting',{pending:unfinished.length});
       return staged;

@@ -10,8 +10,11 @@ import { dateOnly, validDate } from './dates.mjs';
 import { hash, makeBlocks } from './blocks.mjs';
 import { FIELDS, tokenText } from './contract.mjs';
 import { fileURLToPath } from 'node:url';
+import { refreshGraphIndex } from './graph-index.mjs';
+import { indexLexicalDocument } from './lexical-index.mjs';
 
-const INDEX_VERSION = hash(JSON.stringify(['rq-index-2', queryProfile, FIELDS]));
+// Virtual graph fields must not force a full-text reindex or change immutable revisions.
+const INDEX_VERSION = hash(JSON.stringify(['rq-index-2', queryProfile, Object.fromEntries(Object.entries(FIELDS).filter(([key]) => key !== 'entity_ids'))]));
 export async function safeFile(relative) {
   if (!relative || typeof relative !== 'string') return null;
   const candidate = path.resolve(root, relative);
@@ -54,6 +57,7 @@ export function metadataFor(fm, doc = {}, slug = '') {
   metadata.tags = combined.tags ?? [];
   metadata.tickers = combined.tickers ?? [];
   for (const [field, type] of Object.entries(FIELDS)) {
+    if (field === 'entity_ids') continue;
     if (type === 'array') metadata[field] = Array.isArray(metadata[field]) ? [...new Set(metadata[field].filter(x => typeof x === 'string' && x.trim()))] : [];
     else if (type === 'date') {
       const value = dateOnly(metadata[field]);
@@ -131,6 +135,7 @@ export async function buildIndex({ progress = () => {}, force = false } = {}) {
                 FROM jsonb_to_recordset(${tx.json(batch)}::jsonb) AS x(document_id text,revision_id text,block_id text,ordinal int,start_offset int,end_offset int,pdf_page int,section jsonb,text text,tokens text)`;
             }
           }
+          await indexLexicalDocument(tx, id, revision);
         });
         stats.changed++; if (body) stats.text_ready++;
       } catch (e) {
@@ -152,6 +157,7 @@ export async function buildIndex({ progress = () => {}, force = false } = {}) {
       await tx`INSERT INTO research_query.state VALUES ('last_index',${tx.json(stats)}) ON CONFLICT(key) DO UPDATE SET value=excluded.value`;
       await tx`DELETE FROM research_query.state WHERE key='building'`;
     });
+    stats.graph = await refreshGraphIndex(sql);
     return stats;
   } finally { await lease`SELECT pg_advisory_unlock(78314026)`; lease.release(); }
 }
@@ -161,4 +167,3 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   catch (e) { console.error(e.message); process.exitCode = 1; }
   finally { await closeDb(); }
 }
-

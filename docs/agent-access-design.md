@@ -178,7 +178,7 @@ CLI 同时支持常用简短参数，复杂条件通过 UTF-8 JSON 文件或 std
 
 MCP 用 inputSchema、outputSchema 和 structuredContent 描述同一契约，并为兼容客户端提供序列化文本。静态字段说明可提供 Resources，文档内容以有界 read 工具为基线，以适应不同客户端的资源读取能力。只读工具标注只读提示，实际权限由服务端校验。协议依据：[MCP Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)。
 
-Skill 计划位于 `skills/researchwiki/SKILL.md`，只教授实际接口及研究流程：首次 describe；有明确对象先 resolve；枚举用 query、发现用 search；先目录后精读；引用前 read 原文；需要扩展证据时 related；空结果先检查条件和覆盖，再修改查询。服务端承担正确性约束，Skill 不复制算法，也不要求 Agent 读取私有配置。
+Skill 计划位于 `skills/research-wiki/SKILL.md`，只教授实际接口及研究流程：首次 describe；有明确对象先 resolve；枚举用 query、发现用 search；先目录后精读；引用前 read 原文；需要扩展证据时 related；空结果先检查条件和覆盖，再修改查询。服务端承担正确性约束，Skill 不复制算法，也不要求 Agent 读取私有配置。
 
 第二期可增加 `research_collect`：把选定结果或有界子查询组成研究材料包，返回主题覆盖、证据片段、原文/派生标记、未解决问题与引用清单。它不把未经核验的自动摘要变成事实。
 
@@ -259,6 +259,6 @@ Skill 计划位于 `skills/researchwiki/SKILL.md`，只教授实际接口及研�
 
 P1 中的关系接口可先复用已有关系表，实体解析先覆盖已有明确实体与别名；不要求先完成全库自动知识图谱。P2 模型选择与基础设施扩容只在评测表明需要时进行。
 
-建议代码组织：`scripts/query/` 放契约与业务服务，`scripts/query/adapters/` 放 GBrain/数据库/文件适配；`scripts/agent/` 放 CLI/MCP；`scripts/index/` 放投影与核对任务；`tests/retrieval/` 放固定查询与评测；`skills/researchwiki/` 放工作流。网页现有 API 先用兼容适配层迁移，保留旧参数到新参数的明确映射，并逐步停用重复路径。
+建议代码组织：`scripts/query/` 放契约与业务服务，`scripts/query/adapters/` 放 GBrain/数据库/文件适配；`scripts/agent/` 放 CLI/MCP；`scripts/index/` 放投影与核对任务；`tests/retrieval/` 放固定查询与评测；`skills/research-wiki/` 放工作流。网页现有 API 先用兼容适配层迁移，保留旧参数到新参数的明确映射，并逐步停用重复路径。
 
 下一步建议从 P0 开始，优先回答两个问题：3,705 份 parsed 文献在目录与正文检索中各自的实际可见率是多少；用户最常用的公司、时间、机构及原文问题，在当前检索链上分别在哪里失败。

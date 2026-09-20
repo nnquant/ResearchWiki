@@ -1,4 +1,4 @@
-param([string]$LlmConfig = '', [string]$Output = '', [ValidateRange(0,8)][int]$Concurrency = 0)
+param([string]$LlmConfig = '', [string]$Output = '', [ValidateRange(0,16)][int]$Concurrency = 0, [switch]$WatchReports)
 $ErrorActionPreference = 'Stop'
 $articleRepo = Split-Path $PSScriptRoot -Parent
 $articleConfig = Get-Content -LiteralPath (Join-Path $articleRepo 'config.json') -Raw | ConvertFrom-Json
@@ -21,6 +21,7 @@ if (Test-Path -LiteralPath $articleLock) {
 if (Test-Path -LiteralPath (Join-Path $articleState 'pause')) { throw '存在暂停标记，未启动任务' }
 $articleArgs = @(('"' + $articleScript + '"'), '--config', ('"' + $LlmConfig + '"'), '--output', ('"' + $Output + '"'))
 if ($Concurrency -gt 0) { $articleArgs += @('--concurrency', [string]$Concurrency) }
+if ($WatchReports) { $articleArgs += '--watch-reports' }
 $articleWorker = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList $articleArgs -WorkingDirectory $articleRepo -WindowStyle Hidden -RedirectStandardOutput (Join-Path $articleState 'worker.stdout.log') -RedirectStandardError (Join-Path $articleState 'worker.stderr.log') -PassThru
 for ($articleAttempt=0; $articleAttempt -lt 20; $articleAttempt++) {
     $articleWorker.Refresh()

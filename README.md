@@ -1,4 +1,4 @@
-# ResearchWiki · Investment
+# ResearchWiki - Investment
 
 面向主观与基本面投资研究的本地知识 Wiki，以公司研究、行业研究和宏观研究为核心，连接文献、观点、事件、估值与调研纪要。支持 PDF / 网页全文入库、中英文混合检索和证据追溯。
 

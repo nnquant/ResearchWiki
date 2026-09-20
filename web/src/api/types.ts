@@ -164,6 +164,16 @@ export interface PageList {
 }
 
 export interface GraphNode {
+  kind?: 'page' | 'tag' | 'category' | 'entity';
+  entity_id?: string;
+  identity_status?: string;
+  category?: string;
+  group?: string;
+  tag?: string;
+  tags?: string[];
+  tag_count?: number;
+  count?: number;
+  updated_at?: string;
   id: string;
   title: string;
   type: string;
@@ -172,6 +182,8 @@ export interface GraphNode {
 }
 
 export interface GraphEdge {
+  weight?: number;
+  context?: string | null;
   source: string;
   target: string;
   link_type: string;
@@ -179,6 +191,16 @@ export interface GraphEdge {
 }
 
 export interface Graph {
+  view?: 'overview' | 'materials' | 'neighborhood';
+  explicit_unavailable?: boolean;
+  discovery?: { related_pages: number; shown_pages: number; hubs: number; available_hubs: number; hub_limit: number; related_limit: number; node_limit: number };
+  overview?: {
+    covered_pages: number; categories: number; featured_tags: number; other_tags: number; singleton_tags: number;
+    groups: { key: string; label: string; distinct: number; singletons: number; shown: number }[];
+  };
+  scope?: { pages: number; tags: number; untagged: number; shown_pages: number; shown_tags: number; page_limit: number; tag_limit: number; omitted_links: number };
+  types?: { type: string; n: number }[];
+  metadata_errors?: number;
   center: string;
   nodes: GraphNode[];
   edges: GraphEdge[];

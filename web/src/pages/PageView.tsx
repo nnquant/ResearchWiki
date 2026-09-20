@@ -162,7 +162,7 @@ export function PageView() {
             {page.editable
               ? <Link className={`btn ${page.provenance?.raw_url ? '' : 'primary'}`} to={editUrl(page.slug)}>编辑</Link>
               : <button className="btn" disabled title={page.edit_reason ?? ''}>只读</button>}
-            <Link className="btn" to={graphUrl(page.slug)}>关联图</Link>
+            <Link className="btn" to={graphUrl(page.slug)}>图谱</Link>
             {page.provenance?.parsed_url && <a className="btn" href={page.provenance.parsed_url}>解析 Markdown</a>}
             {page.provenance?.translation_url && <a className="btn" href={page.provenance.translation_url} title="打开已保存的译文">翻译</a>}
             {page.type === 'source' && <button className="btn" onClick={() => openNewPage('claim', page.slug)}>由此新建观点</button>}

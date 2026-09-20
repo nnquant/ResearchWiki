@@ -4,22 +4,19 @@ import { gzipSync } from 'node:zlib';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-export async function createShareGuide({ baseUrl, token, outputDir, downloadBaseUrl }) {
-  const url = new URL(baseUrl);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('服务地址无效');
-  if (!token?.trim()) throw new Error('没有可分发的只读凭据');
-  baseUrl = url.href.replace(/\/$/, '');
+export async function buildSkillFiles() {
   const files = {};
   for (const file of ['scripts/agent/client.mjs', 'scripts/agent/cli.mjs', 'scripts/agent/tools.mjs', 'scripts/query/contract.mjs', 'scripts/server/errors.mjs', 'config/query-fields.json']) {
     files['client/' + file] = await fs.readFile(path.join(repo, file), 'utf8');
   }
-  const original = await fs.readFile(path.join(repo, 'skills/researchwiki/SKILL.md'), 'utf8');
-  files['SKILL.md'] = original.replace(/优先使用已连接的[\s\S]*?(?=- 初次访问)/,
+  const original = await fs.readFile(path.join(repo, 'skills/research-wiki/SKILL.md'), 'utf8');
+  files['SKILL.md'] = original.replace(/优先使用已连接的[^\r\n]*[\r\n]+/,
     '使用本 Skill 自带的查询入口：`node "__RESEARCHWIKI_SKILL_DIR__/scripts/research.mjs" <操作> [参数]`。它自动读取同目录 connection.json 中的远程地址和只读凭据，无需设置环境变量或安装项目依赖。可以从任何工作目录调用。优先复用已配置好的 research_* MCP 工具；未连接 MCP 时直接用此 CLI。CLI help 返回工具 schema，stdout 是 JSON。安装和网络说明见 [接入说明](references/agent-access.md)。\n\n')
     .replaceAll('node scripts/agent/cli.mjs', 'node "__RESEARCHWIKI_SKILL_DIR__/scripts/research.mjs"')
     .replace('并给出 `npm run research:index` 的维护命令', '并通知知识库维护者重建索引');
   files['references/agent-access.md'] = await fs.readFile(path.join(repo, 'docs/agent-access.md'), 'utf8');
   files['references/agent-access-migration.md'] = await fs.readFile(path.join(repo, 'docs/agent-access-migration.md'), 'utf8');
+  files['references/local-graph.md'] = await fs.readFile(path.join(repo, 'skills/research-wiki/references/local-graph.md'), 'utf8');
   files['scripts/research.mjs'] = `import fs from 'node:fs/promises';
 const connection = JSON.parse(await fs.readFile(new URL('../connection.json', import.meta.url), 'utf8'));
 process.env.RESEARCHWIKI_URL = connection.base_url;
@@ -28,6 +25,15 @@ delete process.env.RESEARCHWIKI_TOKEN_FILE;
 const { main } = await import('../client/scripts/agent/cli.mjs');
 main().catch(e => { console.log(JSON.stringify({ error: e.message, code: e.code ?? 'CLIENT_ERROR' })); process.exitCode = 1; });
 `;
+  return files;
+}
+
+export async function createShareGuide({ baseUrl, token, outputDir, downloadBaseUrl }) {
+  const url = new URL(baseUrl);
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('服务地址无效');
+  if (!token?.trim()) throw new Error('没有可分发的只读凭据');
+  baseUrl = url.href.replace(/\/$/, '');
+  const files = await buildSkillFiles();
   const payload = gzipSync(JSON.stringify({ files, connection: { base_url: baseUrl, token: token.trim() } })).toString('base64');
   const template = await fs.readFile(path.join(repo, 'scripts/agent/install-skill.template.mjs'), 'utf8');
   const installer = template.replace('__RESEARCHWIKI_PAYLOAD__', payload);
@@ -45,7 +51,7 @@ Agent 可直接下载脚本，先阅读，再运行 \`node researchwiki-install.
 
 把本文件发给你的 Agent，并说：
 
-> 请按照这份文档安装 ResearchWiki Skill。提取文末 JavaScript 代码块，原样保存为 researchwiki-install.mjs，然后运行 node researchwiki-install.mjs。默认安装到 Codex 技能目录；如果你使用其他 Agent，请用 --target 指向该 Agent 的 researchwiki 技能目录。安装后调用 describe 验证连接，再用 describe "半导体" --section tags 查询真实标签。不要在回复中展示 token。
+> 请按照这份文档安装 ResearchWiki Skill。提取文末 JavaScript 代码块，原样保存为 researchwiki-install.mjs，然后运行 node researchwiki-install.mjs。默认安装到 Codex 技能目录；如果你使用其他 Agent，请用 --target 指向该 Agent 的 research-wiki 技能目录。安装后调用 describe 验证连接，再用 describe "半导体" --section tags 查询真实标签。不要在回复中展示 token。
 
 安装只要求 **Node.js 22+**，不需要 npm install、Git 仓库、数据库、模型或本地知识库。脚本包含所需客户端和 Skill，自动保存连接设置并执行联网验证。
 
@@ -55,7 +61,7 @@ Agent 可直接下载脚本，先阅读，再运行 \`node researchwiki-install.
 
 ## 已配置的连接信息
 
-- HTTP 查询：${baseUrl}/api/research/<describe|resolve|query|search|read|related>
+- HTTP 查询：${baseUrl}/api/research/<describe|resolve|query|search|read|related|graph>
 - MCP：${baseUrl}/mcp（Streamable HTTP）
 - 鉴权：Authorization 请求头，内容为 Bearer 加一个空格，再加下面的完整 token。
 
@@ -73,10 +79,10 @@ ${fence}sh
 node researchwiki-install.mjs
 ${fence}
 
-Windows、macOS 和 Linux 使用相同脚本。默认路径为当前用户的 ~/.codex/skills/researchwiki；若设置了 CODEX_HOME，则使用其 skills/researchwiki 目录。其他 Agent 支持 SKILL.md 时，可将目录改为它实际发现技能的位置：
+Windows、macOS 和 Linux 使用相同脚本。默认路径为当前用户的 ~/.codex/skills/research-wiki；若设置了 CODEX_HOME，则使用其 skills/research-wiki 目录。其他 Agent 支持 SKILL.md 时，可将目录改为它实际发现技能的位置：
 
 ${fence}sh
-node researchwiki-install.mjs --target "/你的Agent技能目录/researchwiki"
+node researchwiki-install.mjs --target "/你的Agent技能目录/research-wiki"
 ${fence}
 
 脚本只更新自己曾安装的目录，遇到同名但非本安装器管理的技能会停止，不覆盖现有内容。凭据写入技能目录的 connection.json，后续调用自动读取，无需每次粘贴 token。刷新客户端技能列表或新开会话后生效；如果客户端未自动发现，显式加载安装目录中的 SKILL.md。

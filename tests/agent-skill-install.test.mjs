@@ -47,6 +47,11 @@ test('one Markdown contains the token and a complete executable installer; insta
   const dictionary = await run([path.join(target, 'scripts/research.mjs'), 'describe', '半导体', '--section', 'tags']);
   assert.equal(dictionary.code, 0, dictionary.stderr);
   assert.deepEqual(JSON.parse(dictionary.stdout).input, { section: 'tags', q: '半导体' });
+  const graph = await run([path.join(target, 'scripts/research.mjs'), 'graph', '--operation', 'overview', '--group-by', 'entity']);
+  assert.equal(graph.code, 0, graph.stderr);
+  assert.deepEqual(JSON.parse(graph.stdout).input, { operation: 'overview', group_by: 'entity' });
+  // Relative references must survive installation outside the repository.
+  for (const [, relative] of skill.matchAll(/\]\(([^)]+\.md)\)/g)) await fs.access(path.resolve(target, relative));
   const again = await run([extracted, '--target', target]); assert.equal(again.code, 0, again.stderr);
 });
 

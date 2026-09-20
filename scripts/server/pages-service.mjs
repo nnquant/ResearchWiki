@@ -10,6 +10,7 @@ import { researchMetadata, isReviewDue } from '../research-schema.mjs';
 import { articleCategory } from '../article-category.mjs';
 import { withEntityTags } from '../article-entities.mjs';
 import { matchesTags } from '../query/contract.mjs';
+import { readGraphHeader } from './graph-inventory.mjs';
 
 let lastDbError = null;
 export function dbError() { return lastDbError; }
@@ -95,6 +96,29 @@ export async function getIndex() {
     const meta = await pageMeta(entry);
     out.push({ ...meta, indexed: PIPELINE_PAGES.has(slug), stale: !PIPELINE_PAGES.has(slug) });
   }
+  return out;
+}
+
+/** Entity browsing needs only matching headers, never the full-library body index. */
+export async function getScopedIndex(slugs) {
+  const files = await scanWiki();
+  const entries = [...slugs].map(slug => files.get(slug)).filter(Boolean);
+  const out = [];
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(8, entries.length) }, async () => {
+    while (cursor < entries.length) {
+      const entry = entries[cursor++];
+      const { frontmatter: fm, title } = await readGraphHeader(entry.file);
+      const type = typeof fm.type === 'string' ? fm.type : typeForSlug(entry.slug) ?? 'note';
+      out.push({ slug: entry.slug, title: fm.title || title || entry.slug, type,
+        category: articleCategory(fm, type), tags: withEntityTags(fm).tags,
+        aliases: Array.isArray(fm.aliases) ? fm.aliases.map(String) : [],
+        review_status: fm.review_status ?? null, research: researchMetadata(fm),
+        excerpt: excerptOf('', fm.summary || fm.abstract),
+        updated_at: new Date(entry.mtime).toISOString(), created_at: fm.created_at ?? null,
+        backlinks: null });
+    }
+  }));
   return out;
 }
 
