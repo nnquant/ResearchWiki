@@ -1,4 +1,7 @@
 import http from 'node:http';
+import { gzip } from 'node:zlib';
+import { promisify } from 'node:util';
+import { preferredEncoding } from './encoding.mjs';
 import { config } from '../common.mjs';
 import { createRouter } from './router.mjs';
 import { securityHeaders, assertHost, assertOrigin, assertCsrf, MUTATING_METHODS } from './security.mjs';
@@ -10,18 +13,24 @@ import { registerEditRoutes } from './routes/edit.mjs';
 import { registerIngestRoutes } from './routes/ingest.mjs';
 import { registerStatusRoutes } from './routes/status.mjs';
 import { registerAssetRoutes } from './routes/assets.mjs';
-import { serveStatic } from './routes/static.mjs';
+import { serveStatic, warmStatic } from './routes/static.mjs';
 import { startEmbeddingWarmer } from './search-service.mjs';
 import { registerResearchRoutes, isAgentReadRequest } from './routes/research.mjs';
 import { startQueryRefresh } from '../query/refresh.mjs';
 import { listenAgent } from '../agent/http.mjs';
 import { registerEntityGovernanceRoutes } from './routes/entity-governance.mjs';
 
-function sendJson(res, status, data) {
+const compress = promisify(gzip);
+async function sendJson(res, status, data) {
+  let body = Buffer.from(JSON.stringify(data));
+  res.setHeader('vary', 'Accept-Encoding');
+  if (body.length > 1024 && preferredEncoding(res.req.headers['accept-encoding'], ['gzip'])) {
+    body = await compress(body); res.setHeader('content-encoding', 'gzip');
+  }
   res.setHeader('content-type', 'application/json; charset=utf-8');
   res.setHeader('cache-control', 'no-store');
   res.writeHead(status);
-  res.end(JSON.stringify(data));
+  res.end(body);
 }
 
 function errorStatus(error) {
@@ -32,6 +41,7 @@ function errorStatus(error) {
 }
 
 export function createApp() {
+  void warmStatic();
   const router = createRouter();
   registerStatusRoutes(router);
   registerPageRoutes(router);
@@ -63,6 +73,7 @@ export function createApp() {
       const status = errorStatus(error);
       if (status >= 500) console.error(`[wiki] ${req.method} ${req.url}:`, error);
       if (res.headersSent) { res.end(); return; }
+      if (status === 429) res.setHeader('retry-after', String(error.data?.retry_after ?? 2));
       sendJson(res, status, { error: error.message, ...(error.data ?? {}) });
     }
   });

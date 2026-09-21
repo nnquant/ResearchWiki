@@ -2,11 +2,15 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\deployment.ps1"
 $stateFile = Join-Path $dataRoot 'state/services.json'
 $services = Get-Content -LiteralPath $stateFile -Raw | ConvertFrom-Json -AsHashtable
-$status = Invoke-RestMethod "http://127.0.0.1:$($wikiConfig.port)/api/status" -TimeoutSec 10
-if ($status.active -or $status.queue -gt 0) { throw 'Wiki 有正在运行或排队的导入任务，请完成后再重启。' }
 $wikiPid = $services.wiki.pid
 $wikiProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$wikiPid"
-if (-not $wikiProcess -or -not $wikiProcess.CommandLine.Contains((Join-Path $repoRoot 'scripts\wiki.mjs'))) { throw 'Wiki 进程身份不匹配，未停止任何进程。' }
+if ($wikiProcess) {
+    if (-not $wikiProcess.CommandLine.Contains((Join-Path $repoRoot 'scripts\wiki.mjs'))) { throw 'Wiki 进程身份不匹配，未停止任何进程。' }
+    $status = Invoke-RestMethod "http://127.0.0.1:$($wikiConfig.port)/api/status" -TimeoutSec 10
+    if ($status.active -or $status.queue -gt 0) { throw 'Wiki 有正在运行或排队的导入任务，请完成后再重启。' }
+} elseif (Get-NetTCPConnection -State Listen -LocalPort $wikiConfig.port -ErrorAction SilentlyContinue) {
+    throw 'Wiki 端口由其他进程占用，未启动服务。'
+}
 $agentEnabled = $wikiConfig.agent.enabled -ne $false
 $agentPort = if ($wikiConfig.agent.port) { $wikiConfig.agent.port } else { $wikiConfig.port + 2 }
 $agentProbeHost = if ($wikiConfig.agent.host) { $wikiConfig.agent.host } else { $wikiConfig.host }
@@ -16,7 +20,8 @@ if ($agentEnabled) {
     $listener = Get-NetTCPConnection -State Listen -LocalPort $agentPort -ErrorAction SilentlyContinue
     if ($listener -and @($listener | Where-Object OwningProcess -ne $wikiPid).Count -gt 0) { throw "Agent 端口 $agentPort 已被其他进程占用，未重启。" }
 }
-Stop-Process -Id $wikiPid
+if ($wikiProcess) { Stop-Process -Id $wikiPid }
+Backup-WikiLogs
 $nodeExe = (Get-Command node).Source
 $wikiProc = Start-Process -FilePath $nodeExe -ArgumentList @((Join-Path $repoRoot 'scripts\wiki.mjs'), 'serve') -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput "$dataRoot\logs\wiki.stdout.log" -RedirectStandardError "$dataRoot\logs\wiki.stderr.log" -PassThru
 $services.wiki = @{ pid=$wikiProc.Id; port=$wikiConfig.port }

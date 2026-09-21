@@ -1,11 +1,13 @@
 import { getReadSql } from '../server/db.mjs';
 import { createReadGate } from './read-gate.mjs';
-import { FIELDS, filterSql, tsQuery, terms, fail } from './contract.mjs';
+import { FIELDS, filterSql, tsQuery, queryTerms, fail } from './contract.mjs';
 import { graphCoverage } from './graph-query.mjs';
 
 const metadataWithEntities = `d.metadata || jsonb_build_object('entity_ids',COALESCE((SELECT jsonb_agg(em.entity_id ORDER BY em.entity_id)
   FROM research_query.document_entities em WHERE em.document_id=d.document_id AND em.revision_id=d.revision_id),'[]'::jsonb))`;
 const acquireRead = createReadGate(4);
+export const readGateStats = () => acquireRead.stats();
+const coverageCache = new Map();
 export const CARD_FIELDS = ['page_type', 'research_category', 'document_type', 'tags', 'entity_ids', 'tickers', 'companies', 'industries', 'institutions', 'language', 'published_at', 'research_stage', 'review_status', 'status'];
 function metadataExpression(params, fields) {
   if (!fields) return metadataWithEntities;
@@ -50,6 +52,11 @@ export async function withRead(fn, { timeoutMs = 15000, signal, timings } = {}) 
   } finally { release?.(); }
 }
 export async function coverage(run, filters = null) {
+  const state = await run('SELECT key,value FROM research_query.state');
+  const values = Object.fromEntries(state.map(x => [x.key, x.value]));
+  const cacheKey = JSON.stringify([state.slice().sort((a,b) => a.key.localeCompare(b.key)), filters]);
+  const cached = coverageCache.get(cacheKey);
+  if (cached && cached.expires > Date.now() && !values.building) return cached.value;
   const params = [], where = filterSql(filters, params);
   const [counts] = await run(`SELECT count(*)::int AS documents,count(*) FILTER(WHERE text_chars>0)::int AS text_ready,
     count(*) FILTER(WHERE (CASE WHEN catalog_fields_ready THEN catalog_status ELSE metadata->>'status' END)='parsed')::int AS parsed,
@@ -57,14 +64,17 @@ export async function coverage(run, filters = null) {
     count(*) FILTER(WHERE text_chars>0 AND s.revision_id IS DISTINCT FROM d.revision_id)::int AS lexical_pending
     FROM research_query.documents d LEFT JOIN research_query.search_documents s ON s.document_id=d.document_id
     WHERE NOT deleted AND ${where}`, params);
-  const state = await run('SELECT key,value FROM research_query.state');
-  const values = Object.fromEntries(state.map(x => [x.key, x.value]));
   const usesEntities = f => Boolean(f && (f.field === 'entity_ids' || f.all?.some(usesEntities) || f.any?.some(usesEntities) || usesEntities(f.not)));
   const entity_index = usesEntities(filters) ? await graphCoverage(run) : null;
-  return { ...counts, lexical_ready: counts.text_ready - counts.lexical_pending, vector_ready: null, vector_basis: 'not_measured', scope: 'registered_documents_matching_filters',
+  const value = { ...counts, lexical_ready: counts.text_ready - counts.lexical_pending, vector_ready: null, vector_basis: 'not_measured', scope: 'registered_documents_matching_filters',
     last_index: values.last_index ?? null, building: values.building ?? null,
     snapshot_id: values.last_index?.snapshot_id ?? null, ...(entity_index ? { entity_index } : {}),
     complete: Boolean(values.last_index && !values.last_index.failed && !values.building && !counts.lexical_pending && (!entity_index || entity_index.complete)) };
+  if (!values.building) {
+    if (coverageCache.size >= 128) coverageCache.delete(coverageCache.keys().next().value);
+    coverageCache.set(cacheKey, { value, expires: Date.now() + 60000 });
+  }
+  return value;
 }
 export async function listDocuments(run, { filters, q, sort = 'published_at', direction = 'desc', limit = 100000, fields = null, referencesOnly = false }) {
   const params = [], where = filterSql(filters, params);
@@ -89,6 +99,54 @@ export async function hydrateDocumentRefs(run, refs) {
     return { ...ref, metadata: { ...revision.metadata, ...ref.metadata } };
   });
 }
+
+const queryCountCache = new Map();
+function catalogQuery({ snapshotId, filters, q, sort = 'published_at', direction = 'desc', after }) {
+  if (!['title', ...Object.keys(FIELDS).filter(k => FIELDS[k] === 'date')].includes(sort) || !['asc','desc'].includes(direction)) fail('INVALID_ARGUMENT', '排序字段或方向无效');
+  const params = [snapshotId];
+  const source = `WITH d AS (SELECT c.*,r.metadata || jsonb_build_object('entity_ids',c.entity_ids) AS metadata
+    FROM research_query.catalog_entries c JOIN research_query.revisions r USING(document_id,revision_id) WHERE c.snapshot_id=$1)`;
+  const where = [filterSql(filters, params, 'd', { frozenEntities: true })];
+  const bind = value => { params.push(value); return `$${params.length}`; };
+  if (q) {
+    const p = bind(`%${q.replace(/[\\%_]/g, '\\$&')}%`);
+    where.push(`(d.document_id ILIKE ${p} ESCAPE '\\' OR d.title ILIKE ${p} ESCAPE '\\' OR d.slug ILIKE ${p} ESCAPE '\\' OR d.metadata::text ILIKE ${p} ESCAPE '\\')`);
+  }
+  const ordering = sort === 'title' ? 'd.title' : `d.sort_${sort}`;
+  if (after) {
+    const id = bind(after.id);
+    if (after.key === null) where.push(`(${ordering} IS NULL AND d.document_id > ${id})`);
+    else {
+      const key = bind(after.key);
+      where.push(`(${ordering} ${direction === 'asc' ? '>' : '<'} ${key} OR (${ordering} = ${key} AND d.document_id > ${id}) OR ${ordering} IS NULL)`);
+    }
+  }
+  return { source, where: where.join(' AND '), ordering, params };
+}
+export async function assertCatalogSnapshot(run, snapshotId) {
+  const rows = await run('SELECT snapshot_id FROM research_query.catalog_generations WHERE snapshot_id=$1', [snapshotId]);
+  if (!rows.length) fail('CURSOR_EXPIRED', '目录快照已过期或尚未建立，请重新索引并查询', 410);
+}
+export async function countCatalogDocuments(run, options) {
+  await assertCatalogSnapshot(run, options.snapshotId);
+  const key = JSON.stringify([options.snapshotId, options.filters, options.q]);
+  if (queryCountCache.has(key)) return queryCountCache.get(key);
+  const { source, where, params } = catalogQuery(options);
+  const [row] = !options.filters && !options.q
+    ? await run('SELECT count(*)::int AS n FROM research_query.catalog_entries WHERE snapshot_id=$1',[options.snapshotId])
+    : await run(`${source} SELECT count(*)::int AS n FROM d WHERE ${where}`, params);
+  if (queryCountCache.size >= 128) queryCountCache.delete(queryCountCache.keys().next().value);
+  queryCountCache.set(key, row.n); return row.n;
+}
+export async function catalogPage(run, options) {
+  await assertCatalogSnapshot(run, options.snapshotId);
+  const { source, where, ordering, params } = catalogQuery(options);
+  params.push(options.fields ?? CARD_FIELDS); const fields = `$${params.length}`;
+  params.push(options.limit);
+  return run(`${source} SELECT d.document_id,d.revision_id,d.slug,d.title,d.family_id,d.text_chars,d.indexed_at,${ordering} AS sort_key,
+    COALESCE((SELECT jsonb_object_agg(key,value) FROM jsonb_each(d.metadata) WHERE key=ANY(${fields}::text[])),'{}'::jsonb) AS metadata
+    FROM d WHERE ${where} ORDER BY ${ordering} ${options.direction ?? 'desc'} NULLS LAST,d.document_id ASC LIMIT $${params.length}`, params);
+}
 export async function tagDictionary(run, { q = '', filters } = {}) {
   const params = [], where = filterSql(filters, params);
   params.push(`%${q.replace(/[\\%_]/g, '\\$&')}%`);
@@ -96,23 +154,29 @@ export async function tagDictionary(run, { q = '', filters } = {}) {
     LATERAL jsonb_array_elements_text(d.metadata->'tags') t(tag)
     WHERE NOT deleted AND ${where} AND t.tag ILIKE $${params.length} ESCAPE '\\' GROUP BY t.tag ORDER BY n DESC,t.tag`, params);
 }
-export async function lexical(run, query, filters, candidateLimit) {
+export async function lexical(run, query, filters, candidateLimit, match = 'all') {
   const params = [], where = filterSql(filters, params);
-  params.push(tsQuery(query)); const ts = `$${params.length}`;
+  params.push(tsQuery(query, match)); const ts = `$${params.length}`;
+  params.push(tsQuery(query, 'any')); const passageTs = `$${params.length}`;
+  // The document projection deliberately strips positions to retain late lexemes.
+  // Use GIN term intersection there, then verify phrase positions in original blocks.
+  params.push(tsQuery(query, match).replaceAll(' <-> ', ' & ')); const recallTs = `$${params.length}`;
+  params.push(queryTerms(query)); const units = `$${params.length}`;
   params.push(`%${query.replace(/[\\%_]/g, '\\$&')}%`); const phrase = `$${params.length}`;
-  params.push([...new Set(terms(query))].slice(0,80).map(term => tsQuery(term))); const termQueries = '$' + params.length;
   // GIN eligibility avoids detoasting/ranking every full document vector.
   // GIN term matches provide document-level term coverage; passage scoring follows.
   const [settings] = await run("SELECT current_setting('enable_seqscan') AS seqscan,current_setting('jit') AS jit");
   await run("SET LOCAL enable_seqscan=off"); await run("SET LOCAL jit=off");
   let failed = false;
   try {
-    return await run(`WITH body_recall AS MATERIALIZED (
-    SELECT s.document_id,s.revision_id,count(*) * 0.1 AS score
-    FROM unnest(${termQueries}::text[]) term(query) CROSS JOIN LATERAL (
-      SELECT document_id,revision_id FROM research_query.search_documents
-      WHERE search_vector @@ to_tsquery('simple',term.query) OFFSET 0
-    ) s GROUP BY s.document_id,s.revision_id
+    const rows = await run(`WITH body_recall AS MATERIALIZED (
+    SELECT s.document_id,s.revision_id,0.1 AS score
+    FROM research_query.search_documents s
+    WHERE s.search_vector @@ to_tsquery('simple',${recallTs})
+      AND ${match === 'all' ? 'NOT EXISTS' : 'EXISTS'} (SELECT 1 FROM unnest(${units}::text[]) term(query)
+        WHERE ${match === 'all' ? 'NOT' : ''} (s.search_vector @@ to_tsquery('simple',replace(term.query,' <-> ',' & '))
+          AND (strpos(term.query,' <-> ')=0 OR EXISTS (SELECT 1 FROM research_query.blocks b
+            WHERE b.document_id=s.document_id AND b.revision_id=s.revision_id AND b.search_vector @@ to_tsquery('simple',term.query)))))
   ), header_ids AS MATERIALIZED (
     SELECT document_id FROM research_query.documents WHERE NOT deleted AND search_vector @@ to_tsquery('simple',${ts})
     UNION SELECT document_id FROM research_query.documents WHERE NOT deleted AND title ILIKE ${phrase} ESCAPE '\\'
@@ -129,8 +193,8 @@ export async function lexical(run, query, filters, candidateLimit) {
   ), candidates AS (
     SELECT d.document_id,b.ordinal,b.score,'lexical' AS channel
     FROM shortlist d CROSS JOIN LATERAL (
-      SELECT ordinal,ts_rank_cd(b.search_vector,to_tsquery('simple',${ts})) + CASE WHEN b.text ILIKE ${phrase} ESCAPE '\\' THEN 1 ELSE 0 END AS score FROM research_query.blocks b
-      WHERE b.document_id=d.document_id AND b.revision_id=d.revision_id AND b.search_vector @@ to_tsquery('simple',${ts})
+      SELECT ordinal,ts_rank_cd(b.search_vector,to_tsquery('simple',${passageTs})) + CASE WHEN b.text ILIKE ${phrase} ESCAPE '\\' THEN 1 ELSE 0 END AS score FROM research_query.blocks b
+      WHERE b.document_id=d.document_id AND b.revision_id=d.revision_id AND b.search_vector @@ to_tsquery('simple',${passageTs})
       ORDER BY score DESC,ordinal LIMIT 3
     ) b
     UNION ALL
@@ -138,23 +202,32 @@ export async function lexical(run, query, filters, candidateLimit) {
     FROM header_recall h JOIN shortlist s USING(document_id)
   ), ranked AS (SELECT *,row_number() OVER(PARTITION BY document_id ORDER BY score DESC,ordinal) AS rn FROM candidates)
   SELECT r.*,s.matched_documents FROM ranked r JOIN shortlist s USING(document_id) WHERE rn<=3 ORDER BY r.score DESC,document_id,ordinal`, params);
+    if (!rows.length && match === 'all' && tsQuery(query, 'all') !== tsQuery(query, 'any')) {
+      return await lexical(run, query, filters, candidateLimit, 'any');
+    }
+    rows.lexicalMatch = match === 'all' ? 'all_terms_with_adjacent_han_phrases' : 'any_term_fallback_with_adjacent_han_phrases';
+    return rows;
   } catch (error) { failed = true; throw error; }
   finally {
     // Failed/cancelled transactions roll back settings; preserve the original error.
     if (!failed) await run("SELECT set_config('enable_seqscan',$1,true),set_config('jit',$2,true)",[settings.seqscan,settings.jit]);
   }
 }
-export async function vectorCandidates(run, vector, filters, candidateLimit, model) {
+export async function vectorCandidates(run, vector, filters, candidateLimit, model, documentIds = []) {
+  if (!documentIds.length) return [];
   const params = [], where = filterSql(filters, params);
   params.push(JSON.stringify(vector)); const v = `$${params.length}`;
   params.push(model); const modelParam = `$${params.length}`;
-  // MATERIALIZED eligible vectors forces exact ranking over the filtered set. This avoids
-  // HNSW post-filter starvation; statement_timeout bounds the cost on a large corpus.
+  params.push(documentIds.slice(0, candidateLimit)); const scope = `$${params.length}`;
+  // Rerank a bounded lexical shortlist; never scan the corpus-wide vector table.
   return run(`WITH eligible AS MATERIALIZED (
     SELECT d.document_id,c.chunk_text,c.chunk_index,c.embedding
     FROM research_query.documents d JOIN pages p ON p.slug=d.slug AND p.source_id='default' AND p.deleted_at IS NULL
-    JOIN content_chunks c ON c.page_id=p.id
-    WHERE NOT d.deleted AND ${where} AND c.embedding IS NOT NULL AND c.model=${modelParam}
+    JOIN LATERAL (SELECT * FROM content_chunks c WHERE c.page_id=p.id
+      AND c.embedding IS NOT NULL AND c.model=${modelParam} AND vector_dims(c.embedding)=${vector.length}
+      AND (c.embedded_text_hash IS NULL OR c.embedded_text_hash=md5(c.chunk_text))
+      ORDER BY c.chunk_index LIMIT 64) c ON TRUE
+    WHERE NOT d.deleted AND d.document_id=ANY(${scope}::text[]) AND ${where} AND c.embedding IS NOT NULL AND c.model=${modelParam}
       AND vector_dims(c.embedding)=${vector.length} AND (c.embedded_text_hash IS NULL OR c.embedded_text_hash=md5(c.chunk_text))
       AND extract(epoch FROM p.updated_at)*1000 >= d.source_mtime-1000
   ), ranked AS (

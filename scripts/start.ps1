@@ -24,6 +24,7 @@ if (Test-Path $stateFile) {
 if (-not $services.ContainsKey('wiki')) {
     if (-not (Test-Path (Join-Path $repoRoot 'web\dist\index.html'))) { throw '前端尚未构建，请先运行 npm run build' }
     if (Get-NetTCPConnection -State Listen -LocalPort $wikiConfig.port -ErrorAction SilentlyContinue) { throw "Wiki 端口 $($wikiConfig.port) 已被其他进程占用" }
+    Backup-WikiLogs
     $wikiProc = Start-Process -FilePath $nodeExe -ArgumentList @((Join-Path $repoRoot 'scripts\wiki.mjs'),'serve') -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput "$dataRoot\logs\wiki.stdout.log" -RedirectStandardError "$dataRoot\logs\wiki.stderr.log" -PassThru
     $services.wiki = @{pid=$wikiProc.Id;port=$wikiConfig.port}
 }

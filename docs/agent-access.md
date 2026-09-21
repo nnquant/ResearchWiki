@@ -34,7 +34,7 @@ ResearchWiki 提供共享的条件查询、正文检索和版本化阅读服务�
     "port": 8020,
     "publicBaseUrl": "",
     "wikiBaseUrl": "",
-    "maxConcurrent": 8
+    "maxConcurrent": 4
   }
 }
 ```
@@ -72,7 +72,7 @@ node scripts/agent/verify.mjs
 
 脚本验证认证、标签过滤/排除、游标、正文搜索、版本读取、原件下载，以及真实 MCP SDK 握手和调用与 HTTP 的一致性；stdout 输出不含凭据的 JSON 报告。防火墙、Tailscale ACL、DNS 和反向代理必须允许实际客户端到服务端端口；服务端自访网卡 IP 通过不能代替这一步。
 
-最多同时处理 8 个请求（可配置），超过返回 429 与 Retry-After，客户端应退避；查询有超时和输出预算。当前是单实例服务，查询游标保存在内存；将来多副本部署需粘性路由或共享游标存储。
+研究操作共享最多 4 个并发槽位（可通过 maxConcurrent 降低，上限与读取池对齐为 4），覆盖 8020 HTTP/MCP、8018 研究接口和网页搜索。超额立即返回 429 与 Retry-After，不进入数据库等待队列。仓库客户端对 429、503、504/TIMEOUT 最多退避重试一次，尊重 Retry-After；超过 30 秒的等待提示直接交还调用方，主动取消不重试。查询有超时和输出预算。当前是单实例服务，查询游标会话保存在内存；将来多副本部署需粘性路由或共享游标存储。
 
 ## 建立与维护索引
 
@@ -84,7 +84,9 @@ pwsh -File scripts/restart-wiki.ps1
 
 `research:index` 从 manifest、Wiki 和已经解析的正文构建 PostgreSQL `research_query` schema，不调用解析、LLM 或 embedding。它保留原件，保存版本化文本和页码块，按文件指纹增量更新。首次构建需处理全库，耗时与正文体量有关；查询端明确显示构建/缺失状态。
 
-正常启动的 Wiki 服务会在 30 秒后核对一次，此后每 5 分钟核对并增量更新。`WIKI_QUERY_AUTOINDEX=0` 可关闭后台核对。手工与后台构建共用数据库锁；文件在读取过程中更新时保留旧版本，下一轮重试。原件解析失败的记录仍可在目录中找到，但没有正文能力。coverage 描述最近一轮登记清单的覆盖，不代表磁盘任意目录已被自动收录。
+正常启动的 Wiki 服务每 15 分钟核对并增量更新；启动时不立即扫描全库，触发时若仍有交互请求或排队读取则跳过该轮。`WIKI_QUERY_AUTOINDEX=0` 可关闭后台核对。手工与后台构建共用数据库锁，索引使用独立连接池；文件在读取过程中更新时保留旧版本，下一轮重试。原件解析失败的记录仍可在目录中找到，但没有正文能力。coverage 描述最近一轮登记清单的覆盖，不代表磁盘任意目录已被自动收录。
+
+升级到 2026-09-21 的键集分页版本时，先运行上述 `research:index` 建立目录代次，再重启服务。索引完成后发布不可变的目录、版本引用、排序键和实体成员快照；旧代次退休超过 20 分钟后可清理，覆盖游标的 10 分钟有效期。NUL 字符在写入 PostgreSQL 前递归清洗，原件不改动。
 
 投影是可重建的读模型，但 `research_query.revisions/blocks` 同时保留本功能启用后采集到的引用版本，数据库备份应包含该 schema。无需删除旧 GBrain 数据。维持默认的单实例数据目录，多个 Wiki 服务不要同时操作同一个 jobs 状态文件。
 
@@ -146,8 +148,8 @@ HTTP：`POST /api/research/{describe|resolve|query|search|read|related|graph}`�
 
 ## 原文与检索边界
 
-- lexical：Intl.Segmenter 中英分词，保留任一词项匹配；先用当前版本的文档级 GIN 索引召回，按正文匹配词数和标题/元数据得分选文档，再在文档内选片段，不调用模型，也不是 BM25。`query_plan.lexical_strategy`、`matched_documents` 和 `candidate_truncated` 说明候选策略与截断；这是文档优先的两阶段排序，不保证与旧版全库片段排序一致。
-- hybrid：增加已有 bge-m3 向量的条件内精确扫描，再做 RRF。保持与当前模型/维度匹配，跳过明显落后的页面向量；embedding 与向量查询共享 5 秒的可选阶段预算，超时会保留已得到的关键词结果并报告降级。
+- lexical：Intl.Segmenter 中英分词，将相邻且无空白分隔的汉字单字拼成 `<->` 邻接词组。多词先要求全部词项命中；只有严格匹配为空时才回退到任一词项命中，回退仍保留词组邻接约束。`query_plan.lexical_strategy=all_terms_then_any_term_fallback`，实际路径由 `lexical_match` 的 `all_terms_with_adjacent_han_phrases` 或 `any_term_fallback_with_adjacent_han_phrases` 声明。这是 2026-09-21 起的召回契约变化。先用当前版本的文档级 GIN 索引召回，再核验词组并在候选文档内选片段，不调用模型，也不是 BM25。`matched_documents` 和 `candidate_truncated` 说明过滤后的匹配数量与候选截断；不保证与旧排序等价。
+- hybrid：对 lexical 已选出的最多 120 份候选（deep 为 300 份）使用已有 bge-m3 向量精确重排，再做 RRF。每份候选最多取前 64 个合规 chunk，保持模型、维度、文本哈希和版本时间检查；`query_plan.vector_scan=lexical_candidate_rerank`、`vector_chunks_per_document=64` 声明范围。此版本不提供全库 HNSW 语义召回，关键词未召回的文档、长文超过该窗口的向量证据可能遗漏。embedding 与向量查询共享 2.5 秒可选预算，超时保留已取得的关键词证据并报告降级。网页 fast 模式使用 lexical。
 - deep：当前扩大候选数量。尚未配置生成式查询扩展和交叉编码器重排，响应会明确告知，不能视为已实现这些模型能力。
 - 搜索按照文档默认去重，可选择 document_family 或 passage；译文与原文共享家族。文档级语义/标题命中可能没有可对齐的证据块，这时需要先读取目录。
 - read 返回索引中保存的明确版本；原文块包含起止 UTF-16 字符偏移、章节和解析器物理页码。块可能切开超长表格，使用 neighbors 或继续读取恢复上下文；不猜印刷页码。
@@ -158,7 +160,11 @@ HTTP：`POST /api/research/{describe|resolve|query|search|read|related|graph}`�
 
 升级到文档级召回索引时，维护者先运行 `npm run research:lexical-index` 回填派生投影，再重启服务；如果回填期间仍有旧进程索引材料，重启后再次运行该命令补齐差异。该命令可重复执行，不修改原文或旧引用版本。新索引任务在同一个事务内更新文档、正文版本和召回投影，`coverage.lexical_pending` 显示尚未更新的材料数。
 
-query 游标保存轻量的材料 ID、版本、排序和实体成员快照，每次翻页只读取该页的固定版本元数据；保持原有游标语义，不长期持有数据库事务。read 的 metadata/outline 不再传输整篇正文。研究读取使用独立 4 连接池，排队支持超时取消；`explain=true` 返回覆盖率、候选 SQL、证据补全及排队计时。慢请求和错误写入 `[research-request]` 日志，仅记录操作名、耗时和错误码，不记录查询正文或 token。
+普通 query 使用键集分页：会话只保存目录代次、条件、字段和排序定义，游标携带最后的排序键及 document_id，每页仅读取所需固定版本元数据；total 按快照与条件缓存。标题或日期相同时按 document_id 升序，空日期始终排在最后；旧游标保留原版本及原实体成员，不长期持有数据库事务。group_by 查询仍使用分组结果快照。read 的 metadata/outline 不传输整篇正文。coverage 按索引状态与条件缓存 60 秒，构建中不复用。
+
+研究读取使用独立 4 连接池，排队支持超时取消；`explain=true` 返回覆盖率、候选 SQL、证据补全及排队计时。搜索阶段分别设置 coverage 0.5 秒、lexical 8 秒、关键词证据补全 2 秒、可选语义阶段 2.5 秒预算，并受全局剩余预算约束；超时返回已有证据和 degraded，若尚无证据则可能返回空的降级结果，调用方必须检查 degraded。
+
+进入共享研究服务的请求（含超额 429）追加写入 `dataRoot/logs/research-requests-YYYY-MM-DD.jsonl`，按 UTC 日期分文件，记录时间、操作、状态码、阶段耗时、排队时长与并发数，不记录查询正文或 token。鉴权或传输层在调用研究服务前拒绝的请求不在此日志范围内。带鉴权的 `/health` 提供数据库 ping、读取闸门状态和最近 5 分钟请求 p95。启动脚本会在创建 stdout/stderr 重定向文件前备份旧日志。
 
 ```powershell
 node --test tests/query-contract.test.mjs

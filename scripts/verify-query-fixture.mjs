@@ -31,7 +31,7 @@ try {
   await put('wiki/datasets/prices.md','---\ntitle: 价格数据\ntype: dataset\n---\n# 数据\n记录复权价格及可用时间。\n');
   await put('parsed/paper.md','## PDF 第 3 页\n# 因子研究论文\n横截面动量使用历史收益预测相对收益。\n');
   await put('state/manifest.json',JSON.stringify({documents:{paper:{id:'paper',title:'因子研究论文',parsed_path:'parsed/paper.md',status:'parsed',article_metadata:{tags:['主题:动量']}}}}));
-  let stats=await buildIndex();assert.equal(stats.failed,0);assert.equal(stats.seen,5);checks.push('indexes_quant_pages_and_parsed_only_source');
+  let stats=await buildIndex();assert.equal(stats.failed,0,JSON.stringify(stats.errors));assert.equal(stats.seen,5);checks.push('indexes_quant_pages_and_parsed_only_source');
   const capabilities=await execute('describe');assert.equal(capabilities.results[0].profile,queryProfile.name);assert.equal(capabilities.coverage.text_ready,5);
   const filters={all:[{field:'page_type',op:'in',value:['factor','strategy']},{field:'tags',op:'contains_all',value:['频率:日度']}]};
   const query=await execute('query',{filters,limit:1});assert.equal(query.total,2);assert.ok(query.next_cursor);

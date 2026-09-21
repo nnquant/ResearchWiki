@@ -38,5 +38,5 @@ export async function main(args = process.argv.slice(2)) {
   finally { process.removeListener('SIGINT', stop); }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch(e => { console.log(JSON.stringify({ error: e.message, code: e.code ?? 'CLIENT_ERROR' })); process.exitCode = ['INVALID_ARGUMENT', 'INVALID_CURSOR'].includes(e.code) ? 2 : 1; });
+  main().catch(e => { console.log(JSON.stringify({ error: e.message, code: e.code ?? 'CLIENT_ERROR', ...(e.retry_after != null ? { retry_after: e.retry_after } : {}) })); process.exitCode = ['INVALID_ARGUMENT', 'INVALID_CURSOR'].includes(e.code) ? 2 : 1; });
 }

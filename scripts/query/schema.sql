@@ -58,3 +58,25 @@ CREATE TABLE IF NOT EXISTS research_query.search_documents (
   search_vector tsvector NOT NULL
 );
 CREATE INDEX IF NOT EXISTS rq_search_documents_fts ON research_query.search_documents USING gin(search_vector);
+-- Small immutable catalog references: cursor sessions never hold whole result sets.
+CREATE TABLE IF NOT EXISTS research_query.catalog_generations (
+  snapshot_id text PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  retired_at timestamptz
+);
+CREATE TABLE IF NOT EXISTS research_query.catalog_entries (
+  snapshot_id text NOT NULL REFERENCES research_query.catalog_generations ON DELETE CASCADE,
+  document_id text NOT NULL,
+  revision_id text NOT NULL,
+  slug text NOT NULL,
+  title text NOT NULL,
+  family_id text NOT NULL,
+  text_chars integer NOT NULL,
+  indexed_at timestamptz NOT NULL,
+  entity_ids jsonb NOT NULL DEFAULT '[]',
+  PRIMARY KEY(snapshot_id, document_id),
+  FOREIGN KEY(document_id,revision_id) REFERENCES research_query.revisions(document_id,revision_id)
+);
+ALTER TABLE research_query.catalog_entries ADD COLUMN IF NOT EXISTS sort_published_at text,
+  ADD COLUMN IF NOT EXISTS sort_data_as_of text, ADD COLUMN IF NOT EXISTS sort_ingested_at text,
+  ADD COLUMN IF NOT EXISTS sort_updated_at text;

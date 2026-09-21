@@ -34,3 +34,11 @@ $env:MINERU_MODEL_SOURCE = $wikiConfig.mineruModelSource
 $composeArgs = @('-f', (Join-Path $repoRoot 'compose.yaml'))
 if (-not $wikiConfig.sharedApi.enabled -and $wikiConfig.mineruDevice -eq 'cuda') { $composeArgs += @('-f', (Join-Path $repoRoot 'compose.gpu.yaml')) }
 $composeArgs += @('--env-file', (Join-Path $dataRoot 'runtime/compose.env'))
+
+function Backup-WikiLogs {
+    $logStamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+    foreach ($logStream in @('stdout', 'stderr')) {
+        $logFile = Join-Path $dataRoot "logs/wiki.$logStream.log"
+        if (Test-Path -LiteralPath $logFile) { Copy-Item -LiteralPath $logFile -Destination (Join-Path $dataRoot "logs/wiki.$logStamp.$logStream.log") }
+    }
+}

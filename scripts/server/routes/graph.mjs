@@ -1,14 +1,15 @@
 import { neighborhood } from '../graph-service.mjs';
 import { HttpError } from '../errors.mjs';
 import { buildTagGraph } from '../tag-graph.mjs';
-import { graphInventory, graphTagOptions } from '../graph-inventory.mjs';
+import { graphTagOptions } from '../graph-inventory.mjs';
+import { getFileIndex } from '../pages-service.mjs';
 import { buildGraphOverview } from '../graph-overview.mjs';
 import { withRead } from '../../query/store.mjs';
 import { entityScopeSlugs } from '../../query/graph-query.mjs';
 
 export function registerGraphRoutes(router) {
   router.route('GET', '/api/graph-navigation', async () => {
-    const index = await graphInventory();
+    const { items: index } = await getFileIndex();
     const groups = new Map();
     for (const p of [...index].sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.slug.localeCompare(b.slug))) {
       const type = p.category ?? p.type;
@@ -18,7 +19,7 @@ export function registerGraphRoutes(router) {
     }
     return { items: [...groups.values()].flatMap(g => g.items), counts: Object.fromEntries([...groups].map(([type, g]) => [type, g.count])) };
   });
-  router.route('GET', '/api/graph-tags', async ({ url }) => graphTagOptions(await graphInventory(), url.searchParams.get('q') ?? ''));
+  router.route('GET', '/api/graph-tags', async ({ url }) => graphTagOptions((await getFileIndex()).items, url.searchParams.get('q') ?? ''));
   router.route('GET', '/api/graph', async ({ url }) => {
     const p = url.searchParams;
     const limit = Number(p.get('limit') ?? 80);
@@ -31,7 +32,7 @@ export function registerGraphRoutes(router) {
     const scoped = entityId || filters.q || filters.type || filters.tags_all.length || filters.tags_any.length || filters.tags_none.length;
     const view = p.get('view') ?? (scoped ? 'materials' : 'overview');
     if (!['overview', 'materials'].includes(view)) throw new HttpError(400, 'view 应为 overview 或 materials');
-    let inventory = await graphInventory();
+    let inventory = (await getFileIndex()).items;
     let entityScope;
     if (entityId) { entityScope = await withRead(run => entityScopeSlugs(run, entityId)); inventory = inventory.filter(p => entityScope.slugs.has(p.slug)); }
     const result = view === 'overview' ? buildGraphOverview(inventory, filters) : buildTagGraph(inventory, filters);

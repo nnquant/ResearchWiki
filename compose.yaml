@@ -3,6 +3,8 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
+    shm_size: 1gb
+    command: ["postgres", "-c", "shared_buffers=3GB", "-c", "effective_cache_size=8GB", "-c", "work_mem=32MB", "-c", "maintenance_work_mem=512MB", "-c", "jit=off", "-c", "random_page_cost=1.1"]
     environment:
       POSTGRES_DB: gbrain
       POSTGRES_USER: gbrain

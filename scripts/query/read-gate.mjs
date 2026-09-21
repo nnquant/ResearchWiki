@@ -12,7 +12,7 @@ export function createReadGate(capacity = 4) {
       item.resolve(() => { if (!released) { released = true; active--; drain(); } });
     }
   };
-  return signal => new Promise((resolve, reject) => {
+  const acquire = signal => new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(signal.reason); return; }
     const item = { resolve, reject, signal, abort: () => {
       const i = queue.indexOf(item); if (i !== -1) queue.splice(i, 1);
@@ -21,4 +21,6 @@ export function createReadGate(capacity = 4) {
     signal?.addEventListener('abort', item.abort, { once: true });
     queue.push(item); drain();
   });
+  acquire.stats = () => ({ active, queued: queue.length, capacity });
+  return acquire;
 }

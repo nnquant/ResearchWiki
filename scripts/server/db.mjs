@@ -18,6 +18,13 @@ function getPool(role) {
 }
 export const getSql = () => getPool('wiki-index');
 export const getReadSql = () => getPool('research-read');
+export const getIndexSql = () => getPool('background-index');
+
+export async function indexVersion() {
+  const s = await getSql();
+  const [row] = await s`SELECT count(*)::int AS n,max(updated_at)::text AS updated FROM pages WHERE deleted_at IS NULL`;
+  return JSON.stringify(row);
+}
 
 export async function ping() {
   try {
@@ -40,14 +47,12 @@ const tagsAgg = 'coalesce(array_agg(t.tag ORDER BY t.tag) FILTER (WHERE t.tag IS
 export async function listIndex() {
   const s = await getSql();
   return s.unsafe(`
+    WITH backlinks AS (SELECT l.to_page_id,count(*)::int AS n FROM links l
+      JOIN pages origin ON origin.id=l.from_page_id WHERE origin.deleted_at IS NULL GROUP BY l.to_page_id)
     SELECT p.slug, p.title, p.type, p.updated_at, p.created_at,
-           p.frontmatter->>'review_status' AS review_status,
-           (SELECT count(*)::int FROM links l JOIN pages origin ON origin.id = l.from_page_id WHERE l.to_page_id = p.id AND origin.deleted_at IS NULL) AS backlinks,
-           coalesce(p.frontmatter->'aliases', '[]'::jsonb) AS aliases,
-           ${tagsAgg} AS tags
-    FROM pages p LEFT JOIN tags t ON t.page_id = p.id
+           coalesce(b.n,0) AS backlinks
+    FROM pages p LEFT JOIN backlinks b ON b.to_page_id=p.id
     WHERE p.deleted_at IS NULL
-    GROUP BY p.id
     ORDER BY p.updated_at DESC`);
 }
 

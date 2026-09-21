@@ -40,7 +40,14 @@ export function useBootStatus() {
 }
 
 export function useIndex(enabled = true) {
-  return useQuery({ queryKey: keys.index, queryFn: () => api<IndexEntry[]>('/api/index'), staleTime: 60_000, enabled });
+  return useQuery({ queryKey: keys.index, queryFn: () => api<IndexEntry[]>('/api/index'), staleTime: 300_000, enabled });
+}
+
+export function usePageLookup(q: string) {
+  return useQuery({ queryKey: ['pages', 'lookup', q], queryFn: ({ signal }) => api<PageList>(`/api/pages?${new URLSearchParams({ q, limit: '20', lookup: 'true' })}`, { signal }), staleTime: 300_000 });
+}
+export function usePageTargets(slugs: string[]) {
+  return useQuery({ queryKey: ['pages', 'targets', ...slugs], queryFn: ({ signal }) => api<{ items: IndexEntry[] }>('/api/page-targets', { method: 'POST', body: { slugs }, signal }), staleTime: 300_000, enabled: slugs.length > 0 });
 }
 
 export function useGraphNavigation(enabled: boolean) {
@@ -48,11 +55,11 @@ export function useGraphNavigation(enabled: boolean) {
 }
 
 export function useTypes(enabled = true) {
-  return useQuery({ queryKey: keys.types, queryFn: () => api<TypeCount[]>('/api/types'), staleTime: 60_000, enabled });
+  return useQuery({ queryKey: keys.types, queryFn: () => api<TypeCount[]>('/api/types'), staleTime: 300_000, enabled });
 }
 
 export function useTags(enabled = true) {
-  return useQuery({ queryKey: keys.tags, queryFn: () => api<TagCount[]>('/api/tags'), staleTime: 60_000, enabled });
+  return useQuery({ queryKey: keys.tags, queryFn: () => api<TagCount[]>('/api/tags'), staleTime: 300_000, enabled });
 }
 
 export function useHome() {

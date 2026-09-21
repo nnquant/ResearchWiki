@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { NavLink, Link, useLocation } from 'react-router';
-import { useIndex, useGraphNavigation } from '../api/hooks';
+import { useGraphNavigation } from '../api/hooks';
 import { pageUrl } from '../api/client';
 import { TYPE_META, TYPE_ORDER, CORE_TYPES, typeColor, categoryLabel as typeLabel } from '../lib/types';
 import type { IndexEntry } from '../api/types';
@@ -15,10 +15,8 @@ function readOpen(): Record<string, boolean> {
 /** Type-grouped page tree: each group shows its most recent pages with a link to the filtered library. */
 export function PageTree() {
   const location = useLocation();
-  const inGraph = location.pathname === '/graph' || location.pathname.startsWith('/graph/') || Boolean(new URLSearchParams(location.search).get('entity_id'));
-  const { data: fullIndex } = useIndex(!inGraph);
-  const { data: navigation } = useGraphNavigation(inGraph);
-  const index = inGraph ? navigation?.items : fullIndex;
+  const { data: navigation } = useGraphNavigation(true);
+  const index = navigation?.items;
   const [open, setOpen] = useState<Record<string, boolean>>(readOpen);
 
   const groups = useMemo(() => {
@@ -34,10 +32,10 @@ export function PageTree() {
       .filter(type => map.has(type) || CORE_TYPES.includes(type) || type === 'source')
       .map(type => ({
         type,
-        count: inGraph ? navigation?.counts[type] ?? 0 : map.get(type)?.length ?? 0,
+        count: navigation?.counts[type] ?? 0,
         items: (map.get(type) ?? []).sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))),
       }));
-  }, [index, inGraph, navigation]);
+  }, [index, navigation]);
 
   const toggle = (type: string) => {
     const next = { ...open, [type]: !(open[type] ?? defaultOpen(type)) };

@@ -25,6 +25,9 @@ test('Chinese/English lexical terms preserve useful tokens and escape query synt
   const tokens = tokenText('半导体 AI 00700.HK');
   assert.match(tokens, /半导体/); assert.match(tokens, /ai/); assert.match(tokens, /00700/);
   assert.doesNotMatch(tsQuery("a | b & c"), / & /);
+  assert.match(tsQuery('加息 AI','all'), /'加' <-> '息'/);
+  assert.match(tsQuery('加息 AI','all'), / & /);
+  assert.doesNotMatch(tsQuery('加 息 AI','all'), /<->/);
 });
 test('lossless blocks retain exact page offsets, formulae, tables, and Unicode', () => {
   const body = '## PDF 第 1 页\r\n# 研究\n\n| 年份 | 金额 |\n| 2026 | 12 |\n\n$$a=b$$\n' + '研究😀'.repeat(40) + '\n## PDF 第 2 页\n# 风险\n原文';

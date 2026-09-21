@@ -7,6 +7,7 @@ import { queryProfile } from './profile.mjs';
 import { assetUrl } from '../common.mjs';
 import { safeFile } from './index.mjs';
 import { graphQuery, graphCoverage, resolveEntities, indexedRelated } from './graph-query.mjs';
+import { observedRequest } from './telemetry.mjs';
 
 const sessions = new Map(), TTL = 10 * 60 * 1000, SESSION_BYTES = 32 * 1024 * 1024;
 const BASE = ['filters', 'limit', 'cursor', 'max_response_tokens', 'timeout_ms'];
@@ -37,10 +38,11 @@ function saveSession(operation, request, payload) {
   while (sessions.size && (used + bytes > SESSION_BYTES || sessions.size >= 64)) { const key = sessions.keys().next().value; used -= sessions.get(key).bytes; sessions.delete(key); }
   const id = randomUUID();
   const s = { id, operation, request: { ...request, cursor: undefined }, payload, expires: Date.now() + TTL, bytes,
-    queryFields: operation === 'query' && !request.group_by ? request.fields ?? compactMeta : null };
+    queryFields: operation === 'query' && !request.group_by && !payload.keyset ? request.fields ?? compactMeta : null };
   sessions.set(id, s); return s;
 }
 async function paginate(session, request, offset = 0, read) {
+  if (session.payload.keyset) return paginateCatalog(session, request, offset || null, read);
   const limit = integer(request.limit, 20, 1, 100, 'limit');
   const tokens = integer(request.max_response_tokens, 6000, 512, 32000, 'max_response_tokens');
   const budget = tokens * 2; // conservative multilingual character budget, explicitly an estimate
@@ -60,7 +62,32 @@ async function paginate(session, request, offset = 0, read) {
     cursor_expires_at: new Date(session.expires).toISOString() };
 }
 
-export async function execute(operation, input = {}, { signal } = {}) {
+export function execute(operation, input = {}, options = {}) {
+  return observedRequest(operation, timings => executeRequest(operation, input, { ...options, timings }));
+}
+
+async function paginateCatalog(session, request, after, read) {
+  const limit = integer(request.limit, 20, 1, 100, 'limit');
+  const tokens = integer(request.max_response_tokens, 6000, 512, 32000, 'max_response_tokens');
+  const { keyset, ...payload } = session.payload;
+  const rows = await read(run => store.catalogPage(run, { ...keyset, after, limit: limit + 1 }));
+  const selected = []; let used = JSON.stringify(payload).length + 600, last = after;
+  if (used >= tokens * 2) fail('RESULT_TOO_LARGE', '响应元数据超出预算，请增大 max_response_tokens', 413);
+  for (const row of rows.slice(0, limit)) {
+    const item = card(row, keyset.fields), cost = JSON.stringify(item).length;
+    if (used + cost > tokens * 2) {
+      if (!selected.length) fail('RESULT_TOO_LARGE', '单项超出输出预算，请增大 max_response_tokens 或减少 fields', 413);
+      break;
+    }
+    used += cost; selected.push(item); last = { key: row.sort_key, id: row.document_id };
+  }
+  const more = rows.length > selected.length;
+  return { ...payload, results: selected, returned_count: selected.length, truncated: more,
+    next_cursor: more ? Buffer.from(JSON.stringify([session.id, last])).toString('base64url') : null,
+    budget: { max_response_tokens: tokens, estimated_characters: used, method: '2_characters_per_token_estimate' },
+    cursor_expires_at: new Date(session.expires).toISOString() };
+}
+async function executeRequest(operation, input = {}, { signal, timings } = {}) {
   if (!ALLOWED[operation]) fail('UNKNOWN_OPERATION', '未知研究操作', 404);
   keys(input, ALLOWED[operation]);
   integer(input.limit, 20, 1, 100, 'limit');
@@ -69,17 +96,18 @@ export async function execute(operation, input = {}, { signal } = {}) {
   const combinedSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout);
   const started = Date.now();
   const filters = validateFilters(input.filters);
-  const timings = {};
   const read = async (fn, options = {}) => {
-    try { return await store.withRead(fn, { timeoutMs: Math.max(1, timeout - (Date.now() - started)), signal: combinedSignal, timings, ...options }); }
+    try { return await store.withRead(fn, { signal: combinedSignal, timings, ...options, timeoutMs: Math.max(1, Math.min(options.timeoutMs ?? timeout, timeout - (Date.now() - started))) }); }
     catch (e) { e.queryTimings = { ...timings }; throw e; }
   };
   if (input.cursor) {
     let id, offset;
-    try { [id, offset] = JSON.parse(Buffer.from(text(input.cursor, 'cursor', 500), 'base64url').toString()); } catch { fail('INVALID_CURSOR', '无效游标'); }
+    try { [id, offset] = JSON.parse(Buffer.from(text(input.cursor, 'cursor', 16000), 'base64url').toString()); } catch { fail('INVALID_CURSOR', '无效游标'); }
     const s = sessions.get(id);
     if (!s || s.expires < Date.now()) fail('CURSOR_EXPIRED', '查询快照已过期，请重新执行查询', 410);
-    if (s.operation !== operation || !Number.isInteger(offset) || offset < 0 || offset > s.payload.results.length) fail('INVALID_CURSOR', '游标不属于当前操作');
+    const validPosition = s.payload.keyset ? offset && typeof offset.id === 'string' && (offset.key === null || typeof offset.key === 'string')
+      : Number.isInteger(offset) && offset >= 0 && offset <= s.payload.results.length;
+    if (s.operation !== operation || !validPosition) fail('INVALID_CURSOR', '游标不属于当前操作');
     for (const key of Object.keys(input).filter(k => !['cursor', 'limit', 'max_response_tokens', 'timeout_ms'].includes(k))) {
       if (JSON.stringify(input[key]) !== JSON.stringify(s.request[key])) fail('CURSOR_MISMATCH', '翻页时不能改变查询条件');
     }
@@ -88,7 +116,9 @@ export async function execute(operation, input = {}, { signal } = {}) {
   let payload;
   if (operation === 'search') payload = await search(input, filters, read, combinedSignal, timings);
   else payload = await read(async run => {
+    const coverageStarted = Date.now();
     const coverage = await store.coverage(run, filters);
+    timings.coverage_ms = Date.now() - coverageStarted;
     const base = { coverage, snapshot_id: coverage.snapshot_id, query_plan: { operation, filters, missing_values: 'excluded_from_positive_filters' }, degraded: coverage.complete ? [] : [{ stage: 'catalog', reason: coverage.building ? 'index_building' : 'index_incomplete' }] };
     if (operation === 'describe') {
       if (input.section && !['capabilities', 'tags'].includes(input.section)) fail('INVALID_ARGUMENT', 'section 应为 capabilities 或 tags');
@@ -127,6 +157,11 @@ export async function execute(operation, input = {}, { signal } = {}) {
       const fields = input.fields ? strings(input.fields, 'fields') : compactMeta;
       if (fields.some(f => !Object.hasOwn(FIELDS, f))) fail('INVALID_ARGUMENT', 'fields 包含未知字段');
       if (input.group_by && !Object.hasOwn(FIELDS, input.group_by)) fail('INVALID_ARGUMENT', '未知分组字段');
+      if (!input.group_by) {
+        const keyset = { snapshotId: base.snapshot_id, filters, q: input.q == null ? null : text(input.q, 'q'), sort, direction, fields };
+        const total = await store.countCatalogDocuments(run, keyset);
+        return { ...base, total, results: [], keyset, query_plan: { ...base.query_plan, pagination: 'immutable_catalog_keyset', sort, direction } };
+      }
       const rows = await store.listDocuments(run, { filters, q: input.q == null ? null : text(input.q, 'q'), sort, direction, limit: 100001, fields: input.group_by ? [input.group_by] : fields, referencesOnly: !input.group_by });
       if (rows.length > 100000) fail('RESULT_TOO_LARGE', '查询超过 100000 份材料，请缩小范围', 413);
       if (input.group_by) {
@@ -213,27 +248,31 @@ async function searchBase(input, filters, read, signal, times) {
   const candidateLimit = mode === 'deep' ? 300 : 120;
   const degraded = [], started = Date.now();
   const lexicalStart = Date.now();
-  const initial = await read(async run => {
-    let stage = Date.now();
-    const coverage = await store.coverage(run, filters); times.coverage_ms = Date.now() - stage;
-    stage = Date.now();
-    const hits = await store.lexical(run, query, filters, candidateLimit); times.lexical_query_ms = Date.now() - stage;
-    stage = Date.now();
-    const rows = await store.hydrate(run, [...new Set(hits.map(x => x.document_id))], filters,
-      hits.filter(x => x.channel === 'lexical').map(x => ({ document_id: x.document_id, ordinal: Number(x.ordinal) })));
-    times.lexical_hydrate_ms = Date.now() - stage;
-    return { coverage, hits, rows };
-  });
+  const initial = { coverage: { documents: null, complete: false, snapshot_id: null, scope: 'unknown_due_to_timeout' }, hits: [], rows: [] };
+  const stage = async (name, timeoutMs, fn) => {
+    const start = Date.now();
+    try { return await read(fn, { timeoutMs }); }
+    catch (e) {
+      if (e.data?.code !== 'TIMEOUT') throw e;
+      degraded.push({ stage: name, reason: 'TIMEOUT' }); return null;
+    } finally { times[`${name}_ms`] = Date.now() - start; }
+  };
+  initial.coverage = await stage('coverage', 500, run => store.coverage(run, filters)) ?? initial.coverage;
+  initial.hits = await stage('lexical_query', 8000, run => store.lexical(run, query, filters, candidateLimit)) ?? [];
+  if (initial.hits.length) initial.rows = await stage('lexical_hydrate', 2000, run => store.hydrate(run,
+    [...new Set(initial.hits.map(x => x.document_id))], filters,
+    initial.hits.filter(x => x.channel === 'lexical').map(x => ({ document_id: x.document_id, ordinal: Number(x.ordinal) })))) ?? [];
   times.lexical_ms = Date.now() - lexicalStart;
   const lexicalRows = initial.rows;
   let vector = [];
-  if (mode !== 'lexical' && initial.coverage.documents) {
+  if (mode !== 'lexical' && initial.hits.length && !signal.aborted) {
     const vectorStart = Date.now();
     // Bound the optional stage as a whole, leaving time to return lexical evidence.
-    const semanticSignal = AbortSignal.any([signal, AbortSignal.timeout(5000)]);
+    const semanticSignal = AbortSignal.any([signal, AbortSignal.timeout(2500)]);
     try {
       const embedded = await embedQuery(query, semanticSignal);
-      vector = await read(run => store.vectorCandidates(run, embedded.vector, filters, candidateLimit, embedded.model), { signal: semanticSignal });
+      vector = await read(run => store.vectorCandidates(run, embedded.vector, filters, candidateLimit, embedded.model,
+        [...new Set(initial.hits.map(h => h.document_id))]), { signal: semanticSignal, timeoutMs: 2500 });
     } catch (e) {
       degraded.push({ stage: 'embedding_or_vector', reason: e.data?.code ?? e.message });
     }
@@ -284,9 +323,9 @@ async function searchBase(input, filters, read, signal, times) {
   const expected = input.expected_id ? { id: input.expected_id, in_lexical_candidates: initial.hits.some(x => x.document_id === input.expected_id), in_vector_candidates: vector.some(x => x.document_id === input.expected_id), in_results: results.some(x => x.document_id === input.expected_id) } : undefined;
   return { query, mode, results, candidate_count: sorted.length, total_is_exhaustive: false,
     snapshot_id: initial.coverage.snapshot_id, coverage: initial.coverage, degraded,
-    empty_reason: results.length ? null : !initial.coverage.documents ? 'no_documents_match_filters' : degraded.length ? 'retrieval_incomplete' : 'no_match_in_searched_text',
-    query_plan: { operation: 'search', query, mode, filters, group_by: input.group_by ?? 'document', candidate_limit: candidateLimit, vector_scan: 'exact_filtered_set', score: 'RRF_not_probability',
-      lexical_strategy: 'document_recall_then_passage_rank', lexical_match: 'any_term',
+    empty_reason: results.length ? null : initial.coverage.documents === 0 ? 'no_documents_match_filters' : degraded.length ? 'retrieval_incomplete' : 'no_match_in_searched_text',
+    query_plan: { operation: 'search', query, mode, filters, group_by: input.group_by ?? 'document', candidate_limit: candidateLimit, vector_scan: 'lexical_candidate_rerank', score: 'RRF_not_probability',
+      lexical_strategy: 'all_terms_then_any_term_fallback', lexical_match: initial.hits.lexicalMatch ?? 'unavailable', vector_chunks_per_document: 64,
       matched_documents: initial.hits[0]?.matched_documents ?? 0,
       candidate_truncated: (initial.hits[0]?.matched_documents ?? 0) > candidateLimit,
       ...(input.explain ? { timings: times, total_ms: Date.now() - started, lexical_candidates: initial.hits.length, vector_candidates: vector.length, expected } : {}) } };

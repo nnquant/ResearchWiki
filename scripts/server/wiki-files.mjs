@@ -8,27 +8,51 @@ import { HttpError } from './errors.mjs';
 export const wikiDir = dataPath('wiki');
 const SCAN_TTL_MS = 5000;
 let cache = null;
+let scanning = null, generation = 0;
 
 /** Map of normalized slug → { slug, file, rel, mtime, size } for every markdown file under wiki/. */
 export async function scanWiki({ force = false } = {}) {
   if (!force && cache && Date.now() - cache.at < SCAN_TTL_MS) return cache.map;
+  if (scanning) {
+    if (!force && cache) return cache.map;
+    const map = await scanning;
+    return cache ? map : scanWiki({ force });
+  }
+  const startedGeneration = generation;
+  scanning = scan().then(map => {
+    if (generation === startedGeneration) cache = { at: Date.now(), map };
+    return map;
+  }).finally(() => { scanning = null; });
+  if (!force && cache && Date.now() - cache.at < 30000) {
+    void scanning.catch(() => {});
+    return cache.map;
+  }
+  return scanning;
+}
+
+async function scan() {
   const map = new Map();
   let files = [];
   try { files = await filesBelow(wikiDir); }
   catch (e) { if (e.code !== 'ENOENT') throw e; }
-  for (const file of files) {
-    if (!file.endsWith('.md')) continue;
+  files = files.filter(file => file.endsWith('.md'));
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(8, files.length) }, async () => {
+   while (cursor < files.length) {
+    const file = files[cursor++];
     const rel = slash(path.relative(wikiDir, file));
     const slug = normalizeSlug(rel);
     if (!slug) continue;
-    const stat = await fs.stat(file);
+    const stat = await fs.stat(file).catch(e => { if (e.code !== 'ENOENT') throw e; return null; });
+    if (!stat) continue;
     map.set(slug, { slug, file, rel, mtime: stat.mtimeMs, size: stat.size });
-  }
-  cache = { at: Date.now(), map };
+   }
+  }));
   return map;
 }
 
 export function invalidateScan() {
+  generation++;
   cache = null;
 }
 

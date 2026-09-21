@@ -149,7 +149,7 @@ export function LibraryPage() {
                     {item.excerpt && <span className="article-excerpt" title={item.excerpt}>{item.excerpt}</span>}
                   </td>
                   <td>{(item.category ?? item.type) === 'source' ? <span className="chip">待分类文献</span> : <TypeBadge type={item.category ?? item.type} />}</td>
-                  <td><div className="library-tags">{item.tags.map(t => <span key={t} className="chip">{t}</span>)}</div></td>
+                  <td><div className="library-tags">{item.tags.slice(0, 6).map(t => <span key={t} className="chip">{t}</span>)}{item.tags.length > 6 && <span className="faint" title={item.tags.slice(6).join('、')}>+{item.tags.length - 6}</span>}</div></td>
                   <td><StatusChip status={item.review_status} /></td>
                   <td><span className="small">{RESEARCH_STAGES[String(item.research?.research_stage) as keyof typeof RESEARCH_STAGES] ?? '—'}</span><div className="muted small">{String(item.research?.next_review ?? '')}</div></td>
                   <td className="date">{formatDate(item.updated_at)}</td>

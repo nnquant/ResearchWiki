@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useTemplates, useIndex, useCreatePage } from '../api/hooks';
+import { useTemplates, usePageLookup, usePageTargets, useCreatePage } from '../api/hooks';
 import { ApiError, editUrl } from '../api/client';
 import { useUi } from '../app/UiContext';
 import { Dialog, TypeDot } from '../app/ui';
@@ -12,7 +12,6 @@ export function NewPageDialog() {
   const { newPage, closeNewPage, toast } = useUi();
   const navigate = useNavigate();
   const { data: templates } = useTemplates();
-  const { data: index } = useIndex();
   const create = useCreatePage();
 
   const [type, setType] = useState(newPage.type ?? 'company');
@@ -24,6 +23,8 @@ export function NewPageDialog() {
   const [tags, setTags] = useState('');
   const [relationField, setRelationField] = useState<string>('derived_from');
   const [relationTarget, setRelationTarget] = useState(newPage.derivedFrom ?? '');
+  const { data: lookup } = usePageLookup(relationTarget);
+  const index = lookup?.items;
   const [error, setError] = useState<string | null>(null);
   const updateResearch = (key: string, value: string) => setResearch(previous => ({ ...previous, [key]: value || null }));
 
@@ -32,7 +33,8 @@ export function NewPageDialog() {
   const template = templates?.find(t => t.type === type);
   const dir = template?.dir ?? TYPE_META[type]?.dir ?? 'notes';
   const slug = `${dir}/${normalizeSlug(slugTail)}`;
-  const exists = useMemo(() => index?.some(i => i.slug === slug) ?? false, [index, slug]);
+  const { data: targets } = usePageTargets(slugTail ? [slug] : []);
+  const exists = targets?.items.some(i => i.slug === slug) ?? false;
   const ordered = useMemo(() => (templates ?? []).slice().sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type)), [templates]);
   const relationOptions = template?.fields?.length ? template.fields : ['derived_from', 'supported_by', 'contradicted_by'];
   useEffect(() => {

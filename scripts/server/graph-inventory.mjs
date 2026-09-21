@@ -73,12 +73,16 @@ export function graphInventory() {
   return inflight;
 }
 
+const tagOptionsCache = new WeakMap();
 export function graphTagOptions(index, query = '') {
-  const counts = new Map();
-  const q = query.trim().toLocaleLowerCase();
-  for (const page of index) for (const tag of new Set(page.tags)) {
-    if (!q || tag.toLocaleLowerCase().includes(q)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  let ranked = tagOptionsCache.get(index);
+  if (!ranked) {
+    const counts = new Map();
+    for (const page of index) for (const tag of new Set(page.tags)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    ranked = [...counts].sort(([a, an], [b, bn]) => bn - an || a.localeCompare(b));
+    tagOptionsCache.set(index, ranked);
   }
-  const ranked = [...counts].sort(([a, an], [b, bn]) => bn - an || a.localeCompare(b));
-  return { tags: ranked.slice(0, 200).map(([tag, n]) => ({ tag, n })), total: ranked.length };
+  const q = query.trim().toLocaleLowerCase();
+  const matching = q ? ranked.filter(([tag]) => tag.toLocaleLowerCase().includes(q)) : ranked;
+  return { tags: matching.slice(0, 200).map(([tag, n]) => ({ tag, n })), total: matching.length };
 }

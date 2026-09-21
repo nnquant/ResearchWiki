@@ -1,10 +1,9 @@
-import { memo, useMemo, type ReactNode } from 'react';
+import { memo, useMemo, useEffect, useState, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
-import rehypeKatex from 'rehype-katex';
 import { remarkWikilink } from './remark-wikilink';
 import { remarkHeadingIds } from './remark-heading-ids';
 import { WikiLink } from './WikiLink';
@@ -79,9 +78,19 @@ function useComponents(): Components {
 
 /** Markdown renderer with GFM, KaTeX, wikilinks and sanitized raw HTML. */
 export const Markdown = memo(function Markdown({ markdown, idPrefix = '' }: Props) {
+  const hasMath = /\$|\\\(|\\\[/.test(markdown);
+  const [mathPlugin, setMathPlugin] = useState<typeof import('rehype-katex').default | null>(null);
+  useEffect(() => {
+    if (!hasMath) return;
+    let active = true;
+    void Promise.all([import('rehype-katex'), import('katex/dist/katex.min.css')]).then(([plugin]) => {
+      if (active) setMathPlugin(() => plugin.default);
+    }).catch(() => { /* Keep the original formula visible when the optional chunk fails. */ });
+    return () => { active = false; };
+  }, [hasMath]);
   const components = useComponents();
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath, remarkWikilink, [remarkHeadingIds, { prefix: idPrefix }] as const], [idPrefix]);
-  const rehypePlugins = useMemo(() => [rehypeRaw, [rehypeSanitize, schema] as const, [rehypeKatex, katexOptions] as const], []);
+  const rehypePlugins = useMemo(() => [rehypeRaw, [rehypeSanitize, schema] as const, ...(hasMath && mathPlugin ? [[mathPlugin, katexOptions] as const] : [])], [hasMath, mathPlugin]);
   return (
     <div className="md">
       <ReactMarkdown
