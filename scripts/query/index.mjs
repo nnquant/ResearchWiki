@@ -10,11 +10,11 @@ import { dateOnly, validDate } from './dates.mjs';
 import { hash, makeBlocks } from './blocks.mjs';
 import { FIELDS, tokenText } from './contract.mjs';
 import { fileURLToPath } from 'node:url';
-import { refreshGraphIndex } from './graph-index.mjs';
+import { refreshGraphIndex, graphEnabled } from './graph-hooks.mjs';
 import { indexLexicalDocument } from './lexical-index.mjs';
 
 // Virtual graph fields must not force a full-text reindex or change immutable revisions.
-const INDEX_VERSION = hash(JSON.stringify(['rq-index-2', queryProfile, Object.fromEntries(Object.entries(FIELDS).filter(([key]) => key !== 'entity_ids'))]));
+const INDEX_VERSION = hash(JSON.stringify(['rq-index-2', Object.fromEntries(Object.entries(queryProfile).filter(([key]) => key !== 'graphAdapter')), Object.fromEntries(Object.entries(FIELDS).filter(([key]) => key !== 'entity_ids'))]));
 export async function safeFile(relative) {
   if (!relative || typeof relative !== 'string') return null;
   const candidate = path.resolve(root, relative);
@@ -178,8 +178,7 @@ export async function buildIndex({ progress = () => {}, force = false } = {}) {
       await tx`INSERT INTO research_query.catalog_entries(snapshot_id,document_id,revision_id,slug,title,family_id,text_chars,indexed_at,entity_ids,
           sort_published_at,sort_data_as_of,sort_ingested_at,sort_updated_at)
         SELECT ${stats.snapshot_id},d.document_id,d.revision_id,d.slug,d.title,d.family_id,d.text_chars,d.indexed_at,
-          COALESCE((SELECT jsonb_agg(em.entity_id ORDER BY em.entity_id) FROM research_query.document_entities em
-            WHERE em.document_id=d.document_id AND em.revision_id=d.revision_id),'[]'::jsonb),
+          ${tx.unsafe(graphEnabled ? "COALESCE((SELECT jsonb_agg(em.entity_id ORDER BY em.entity_id) FROM research_query.document_entities em WHERE em.document_id=d.document_id AND em.revision_id=d.revision_id),'[]'::jsonb)" : "'[]'::jsonb")},
           d.metadata->>'published_at',d.metadata->>'data_as_of',d.metadata->>'ingested_at',d.metadata->>'updated_at'
         FROM research_query.documents d WHERE NOT d.deleted`;
       await tx`DELETE FROM research_query.catalog_generations WHERE retired_at < now() - interval '20 minutes'`;

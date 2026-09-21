@@ -1,0 +1,19 @@
+name: Verify research wiki
+on:
+  push:
+    branches: [main, investment]
+  pull_request:
+    branches: [main, investment]
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: Copy-Item config.example.json config.json
+      - run: node --test --test-concurrency=1 tests/*.test.mjs
+      - run: npm run build

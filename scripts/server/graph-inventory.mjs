@@ -1,5 +1,7 @@
-import fs from 'node:fs/promises';
-import { scanWiki, splitFrontmatter } from './wiki-files.mjs';
+import {readGraphHeader} from './page-header.mjs';
+export {readGraphHeader} from './page-header.mjs';
+export {graphTagOptions} from './tag-options.mjs';
+import { scanWiki } from './wiki-files.mjs';
 import { typeForSlug } from './slugs.mjs';
 import { articleCategory } from '../article-category.mjs';
 import { withEntityTags } from '../article-entities.mjs';
@@ -8,32 +10,6 @@ import { RELATION_FIELDS } from './slugs.mjs';
 
 const cache = new Map();
 let inflight;
-
-/** Read only the YAML header, in bounded chunks. Large article bodies stay off this path. */
-export async function readGraphHeader(file) {
-  const handle = await fs.open(file, 'r');
-  try {
-    const chunks = [];
-    let size = 0;
-    while (size < 1024 * 1024) {
-      const buffer = Buffer.alloc(8192);
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, size);
-      chunks.push(buffer.subarray(0, bytesRead)); size += bytesRead;
-      const text = Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '');
-      if (!/^---\r?\n/.test(text)) return { frontmatter: {}, title: text.match(/^# (.+)$/m)?.[1] };
-      const end = /\r?\n---(?:\r?\n|$)/g;
-      end.lastIndex = text.indexOf('\n');
-      const match = end.exec(text);
-      if (match) {
-        const { frontmatter, error } = splitFrontmatter(text.slice(0, match.index + match[0].length));
-        if (error) throw new Error('材料 YAML 元数据格式无效');
-        return { frontmatter };
-      }
-      if (bytesRead < buffer.length) throw new Error('材料 YAML 元数据缺少结束标记');
-    }
-    throw new Error('材料 YAML 元数据超过 1 MiB');
-  } finally { await handle.close(); }
-}
 
 /** Share concurrent scans; reuse unchanged metadata and evict deleted pages. No database or full text. */
 export function graphInventory() {
@@ -71,18 +47,4 @@ export function graphInventory() {
     return [...cache.values()].map(row => row.page);
   })().finally(() => { inflight = null; });
   return inflight;
-}
-
-const tagOptionsCache = new WeakMap();
-export function graphTagOptions(index, query = '') {
-  let ranked = tagOptionsCache.get(index);
-  if (!ranked) {
-    const counts = new Map();
-    for (const page of index) for (const tag of new Set(page.tags)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-    ranked = [...counts].sort(([a, an], [b, bn]) => bn - an || a.localeCompare(b));
-    tagOptionsCache.set(index, ranked);
-  }
-  const q = query.trim().toLocaleLowerCase();
-  const matching = q ? ranked.filter(([tag]) => tag.toLocaleLowerCase().includes(q)) : ranked;
-  return { tags: matching.slice(0, 200).map(([tag, n]) => ({ tag, n })), total: matching.length };
 }

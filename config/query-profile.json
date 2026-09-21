@@ -1,5 +1,6 @@
 {
   "name": "investment",
   "metadataAdapter": "../investment/query-metadata.mjs",
-  "webTypeField": "research_category"
+  "webTypeField": "research_category",
+  "graphAdapter": "../investment/query-graph.mjs"
 }

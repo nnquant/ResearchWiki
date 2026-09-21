@@ -6,7 +6,7 @@ import { hash } from './blocks.mjs';
 import { queryProfile } from './profile.mjs';
 import { assetUrl } from '../common.mjs';
 import { safeFile } from './index.mjs';
-import { graphQuery, graphCoverage, resolveEntities, indexedRelated } from './graph-query.mjs';
+import { graphQuery, graphCoverage, resolveEntities, indexedRelated, graphEnabled } from './graph-hooks.mjs';
 import { observedRequest } from './telemetry.mjs';
 
 const sessions = new Map(), TTL = 10 * 60 * 1000, SESSION_BYTES = 32 * 1024 * 1024;
@@ -19,6 +19,7 @@ const ALLOWED = {
   related: [...BASE, 'id', 'direction', 'link_types', 'depth'],
   graph: [...BASE, 'operation', 'seed', 'seeds', 'direction', 'relation_types', 'depth', 'max_nodes', 'max_edges', 'group_by','relation_as_of'],
 };
+if (!graphEnabled) delete ALLOWED.graph;
 const compactMeta = store.CARD_FIELDS;
 function card(d, fields = compactMeta) {
   return { document_id: d.document_id, revision_id: d.revision_id, slug: d.slug, title: d.title, family_id: d.family_id,
@@ -130,9 +131,9 @@ async function executeRequest(operation, input = {}, { signal, timings } = {}) {
       return { ...base, results: [{ profile: queryProfile.name, operations: Object.keys(ALLOWED), fields: FIELDS, modes: ['lexical', 'hybrid', 'deep'],
         deep_capabilities: { increased_candidate_pool: true, llm_expansion: false, cross_encoder_reranking: false },
         tags: { dictionary: 'describe(section=tags)', resolve: 'resolve(kind=tag)', operators: ['contains_all', 'contains_any', 'contains_none'], provenance_filter: false },
-        entities: { resolve: 'resolve(kind=entity)', filter_field: 'entity_ids', ambiguity: 'returns_candidates_without_guessing', observed_names_are_verified_identities: false, search_fallback:'search(entity_name, entity_type, query): confirmed scope plus original name, user filters preserved' },
+        ...(graphEnabled ? { entities: { resolve: 'resolve(kind=entity)', filter_field: 'entity_ids', ambiguity: 'returns_candidates_without_guessing', observed_names_are_verified_identities: false, search_fallback:'search(entity_name, entity_type, query): confirmed scope plus original name, user filters preserved' },
         graph: { operations: ['overview', 'neighbors', 'intersection'], max_depth: 2, max_nodes: 400, max_edges: 1000, shared_tags_are_semantic_relations: false,
-          business_relations:['issued_by','subsidiary_of','product_of','supplies_to'],relation_as_of:'known validity and observed_at on or before date; unknown validity excluded' },
+          business_relations:['issued_by','subsidiary_of','product_of','supplies_to'],relation_as_of:'known validity and observed_at on or before date; unknown validity excluded' } } : {}),
         read: { views: ['metadata', 'outline', 'blocks'], locator: 'revision + block_id', pdf_page: '1-based physical page from parser markers' },
         limits: { max_results_per_page: 100, max_filter_nodes: 100, cursor_ttl_seconds: 600 },
         indexing: { command: 'npm run research:index', models_called: false, historical_cutoff: 'publication_date_only' } }] };

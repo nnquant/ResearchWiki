@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { getSql, closeDb } from '../scripts/server/db.mjs';
 import { indexLexicalDocument } from '../scripts/query/lexical-index.mjs';
+import { FIELDS } from '../scripts/query/contract.mjs';
 import { lexical, documentRevision, listDocuments, hydrateDocumentRefs, catalogPage, countCatalogDocuments } from '../scripts/query/store.mjs';
 
 test('document recall retains body-only terms, filters before truncation, and immutable evidence', { skip: process.env.RESEARCH_GRAPH_DB_TEST !== '1' }, async () => {
@@ -87,7 +88,7 @@ test('document recall retains body-only terms, filters before truncation, and im
     }
     const expected = await db`SELECT document_id FROM research_query.catalog_entries ORDER BY sort_published_at ASC NULLS LAST,document_id`;
     assert.deepEqual(ascending,expected.map(r=>r.document_id));
-    assert.equal(await countCatalogDocuments(run,{...options,filters:{field:'entity_ids',op:'contains_all',value:['entity:frozen']}}),total);
+    if (FIELDS.entity_ids) assert.equal(await countCatalogDocuments(run,{...options,filters:{field:'entity_ids',op:'contains_all',value:['entity:frozen']}}),total);
     await assert.rejects(catalogPage(run,{...options,snapshotId:'expired',limit:2}),e=>e.data?.code==='CURSOR_EXPIRED');
   } finally {
     await sql.unsafe(`DROP SCHEMA ${schema} CASCADE`); await closeDb();

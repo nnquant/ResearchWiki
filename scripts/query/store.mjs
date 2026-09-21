@@ -1,14 +1,14 @@
 import { getReadSql } from '../server/db.mjs';
 import { createReadGate } from './read-gate.mjs';
 import { FIELDS, filterSql, tsQuery, queryTerms, fail } from './contract.mjs';
-import { graphCoverage } from './graph-query.mjs';
+import { graphCoverage, graphEnabled } from './graph-hooks.mjs';
 
-const metadataWithEntities = `d.metadata || jsonb_build_object('entity_ids',COALESCE((SELECT jsonb_agg(em.entity_id ORDER BY em.entity_id)
+const metadataWithEntities = !graphEnabled ? 'd.metadata' : `d.metadata || jsonb_build_object('entity_ids',COALESCE((SELECT jsonb_agg(em.entity_id ORDER BY em.entity_id)
   FROM research_query.document_entities em WHERE em.document_id=d.document_id AND em.revision_id=d.revision_id),'[]'::jsonb))`;
 const acquireRead = createReadGate(4);
 export const readGateStats = () => acquireRead.stats();
 const coverageCache = new Map();
-export const CARD_FIELDS = ['page_type', 'research_category', 'document_type', 'tags', 'entity_ids', 'tickers', 'companies', 'industries', 'institutions', 'language', 'published_at', 'research_stage', 'review_status', 'status'];
+export const CARD_FIELDS = ['page_type', 'research_category', 'document_type', 'tags', 'entity_ids', 'tickers', 'companies', 'industries', 'institutions', 'language', 'published_at', 'research_stage', 'review_status', 'status'].filter(field => Object.hasOwn(FIELDS, field));
 function metadataExpression(params, fields) {
   if (!fields) return metadataWithEntities;
   if (fields.some(f => !Object.hasOwn(FIELDS, f))) fail('INVALID_ARGUMENT', '未知字段');
