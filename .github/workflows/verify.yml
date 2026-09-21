@@ -2,9 +2,9 @@ name: Verify research wiki
 on:
   workflow_dispatch:
   push:
-    branches: [main, investment]
+    branches: [main]
   pull_request:
-    branches: [main, investment]
+    branches: [main]
 jobs:
   verify:
     runs-on: windows-latest

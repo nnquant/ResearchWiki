@@ -2,7 +2,7 @@
 
 面向主观与基本面投资研究的本地知识 Wiki，以公司研究、行业研究和宏观研究为核心，连接文献、观点、事件、估值与调研纪要。支持 PDF / 网页全文入库、中英文混合检索和证据追溯。
 
-`main` 分支侧重量化研究；`investment` 分支侧重通用投资研究。既有因子、策略和实验页面在本分支仍可读取与编辑。
+仓库只维护 `main`，统一采用原 investment 的完整功能。既有因子、策略和实验页面仍可读取与编辑。维护和旧部署升级流程见 [单分支维护](docs/branch-maintenance.md)。
 
 ## 功能
 
@@ -23,7 +23,7 @@
 ```powershell
 git clone https://github.com/nnquant/ResearchWiki.git
 cd ResearchWiki
-git switch investment
+git switch main
 Copy-Item config.example.json config.json
 # 按需编辑 config.json
 # 内网模式：将管理员提供的个人密钥存入数据目录 runtime/shared-api-key，或设置 QUANT_API_KEY
@@ -66,7 +66,7 @@ node scripts/verify-shared-api.mjs
 
 ## 开发与验证
 
-Agent 接入已提供六个只读研究工具、统一 CLI、标签交集/并集/排除及范围内正文检索。远程机器使用独立 Agent 端口（默认 8020）的 Bearer HTTP API 或 `/mcp` Streamable HTTP；CLI/stdio 桥支持 `RESEARCHWIKI_URL`，`npm run research:package` 生成不含知识库数据和凭据的轻量客户端。首次运行 `npm run research:index` 建立不依赖 LLM/向量化的正文索引；完整用法见 [Agent 接入说明](docs/agent-access.md)，研究工作流 Skill 位于 [skills/researchwiki](skills/researchwiki/SKILL.md)。
+Agent 接入已提供七个只读研究工具、统一 CLI、标签交集/并集/排除及范围内正文检索。远程机器使用独立 Agent 端口（默认 8020）的 Bearer HTTP API 或 `/mcp` Streamable HTTP；CLI/stdio 桥支持 `RESEARCHWIKI_URL`，`npm run research:package` 生成不含知识库数据和凭据的轻量客户端。首次运行 `npm run research:index` 建立不依赖 LLM/向量化的正文索引；完整用法见 [Agent 接入说明](docs/agent-access.md)，研究工作流 Skill 位于 [skills/researchwiki](skills/researchwiki/SKILL.md)。
 
 ```powershell
 npm ci
@@ -127,7 +127,7 @@ pwsh -File scripts/start-report-batch.ps1 -Source D:/data/reports/raw1 -Output D
 
 类型及关系契约见 [investment-research.schema.json](config/investment-research.schema.json)，研究字段见 [research-fields.json](config/research-fields.json)。新建对话框可填写字段，后续通过编辑页顶部 YAML 更新；日期为 `YYYY-MM-DD`，证券代码为字符串数组。资料截至日不自动使用创建日期，空值表示尚未确认。日期按服务所在时区判断到期。
 
-已有部署切换到本分支后，需要在选定的数据目录执行 `node scripts/init-brain.mjs` 激活 `investment-research` schema，再执行 `node scripts/wiki.mjs index` 和 `npm run build`，重启服务。初始化会更改该数据实例的活动 schema；Git 分支不隔离数据库和文献数据。需要与 main 并行运行时，应使用独立 checkout 并分别配置数据目录、数据库、端口及容器项目名。切回 main 的部署应重新运行该分支的初始化与索引命令。
+原 quant 部署首次升级到统一 main 时，需保留本实例配置、备份数据并暂停写入，激活 investment-research schema，再重建 Wiki 和查询索引；原 investment 部署切换到 main 即可继续维护。具体步骤见 [单分支维护](docs/branch-maintenance.md)。多实例均使用 main，并独立配置数据目录、数据库、端口及容器项目名。
 
 `seed-wiki.mjs` 仅创建不存在的导航与规范页面，不覆盖已有研究内容；已有量化导航不会自动改写。研究阶段用于组织工作，不等同于投资论点已被验证，也不自动产生评级或交易建议。
 
@@ -168,4 +168,4 @@ GBrain 固定提交 `8c70f6255047a7647adb30b1d6333a48068d9fa5`，由安装脚本
 
 ## Agent 查询与远程接入
 
-HTTP、MCP 和 CLI 共享条件查询、全文检索、版本阅读与标签组合。使用 `npm run research:index` 建立读索引、`node scripts/setup-mcp.mjs` 初始化本实例只读凭据。详见 [接入说明](docs/agent-access.md)。公共代码通过 `config/query-profile.json` 选择业务适配，字段契约位于 `config/query-fields.json`；main 默认量化研究。
+HTTP、MCP 和 CLI 共享条件查询、全文检索、版本阅读与标签组合。使用 `npm run research:index` 建立读索引、`node scripts/setup-mcp.mjs` 初始化本实例只读凭据。详见 [接入说明](docs/agent-access.md)。公共代码通过 `config/query-profile.json` 选择业务适配，字段契约位于 `config/query-fields.json`；main 统一使用 investment profile，保留既有量化页面兼容能力。
