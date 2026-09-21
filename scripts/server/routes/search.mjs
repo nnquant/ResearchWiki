@@ -19,7 +19,7 @@ export function registerSearchRoutes(router) {
     const cancel = () => { if (!res.writableEnded) controller.abort(); }; res.once('close', cancel);
     try {
       if (offset) throw new HttpError(400, '请使用 cursor 翻页，offset 已停用');
-      const request = url.searchParams.get('cursor') ? { cursor: url.searchParams.get('cursor'), limit, max_response_tokens: 32000 } : { query: q, mode: mode === 'fast' ? 'hybrid' : mode, filters, limit, max_response_tokens: 32000, explain: true };
+      const request = url.searchParams.get('cursor') ? { cursor: url.searchParams.get('cursor'), limit, max_response_tokens: 32000 } : { query: q, mode: mode === 'fast' ? 'lexical' : mode, filters, limit, max_response_tokens: 32000, explain: true };
       const result = await execute('search', request, { signal: controller.signal });
       return { ...result, engine: 'research-query', results: result.results.map(hit => ({ ...hit, category: hit.metadata.research_category,
         type: hit.metadata.page_type, page_id: null, chunk_text: hit.snippet, chunk_index: Number(hit.evidence?.block_id?.split(':').at(-1) ?? 0), chunk_source: hit.content_kind,

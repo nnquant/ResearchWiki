@@ -2,9 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
+import { atomicRename } from './atomic-rename.mjs';
+import { normalizeSlug } from './server/slugs.mjs';
 
 export const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const config = JSON.parse(await fs.readFile(path.join(repo, 'config.json'), 'utf8'));
@@ -20,11 +22,30 @@ export const safeName = name => {
   return (clean.length<=150?clean:clean.slice(0,150-ext.length).replace(/[. ]+$/,'')+ext)||'document';
 };
 
+const jsonWrites = new Map();
 export async function atomicJson(file, value) {
-  await fs.mkdir(path.dirname(file), {recursive: true});
-  const temp = `${file}.${process.pid}.tmp`;
-  await fs.writeFile(temp, JSON.stringify(value, null, 2) + '\n', 'utf8');
-  await fs.rename(temp, file);
+  const contents = JSON.stringify(value, null, 2) + '\n';
+  const manifestCounts = file === manifestPath ? countManifest(value) : null;
+  // Serialize same-file writes: Windows cannot reliably replace one file concurrently.
+  const pending = (jsonWrites.get(file) ?? Promise.resolve()).catch(() => {}).then(async () => {
+    await fs.mkdir(path.dirname(file), {recursive: true});
+    const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      await fs.writeFile(temp, contents, 'utf8');
+      const written = file === manifestPath ? await fs.stat(temp) : null;
+      await atomicRename(temp, file);
+      if (file === manifestPath) {
+        try {
+          const stat = await fs.stat(file);
+          if (stat.ino === written.ino && stat.mtimeMs === written.mtimeMs && stat.size === written.size) {
+            await atomicJson(dataPath('state', 'manifest-summary.json'), { key: manifestKey(stat), counts: manifestCounts });
+          }
+        } catch { /* A derived summary must never turn a successful manifest write into a failed ingest. */ }
+      }
+    } finally { await fs.rm(temp, { force: true }); }
+  });
+  jsonWrites.set(file, pending);
+  try { await pending; } finally { if (jsonWrites.get(file) === pending) jsonWrites.delete(file); }
 }
 export async function readJson(file, fallback) {
   try { return JSON.parse(await fs.readFile(file, 'utf8')); }
@@ -32,6 +53,52 @@ export async function readJson(file, fallback) {
 }
 export const manifestPath = dataPath('state', 'manifest.json');
 export const manifest = () => readJson(manifestPath, {version: 1, documents: {}});
+const manifestKey = stat => stat ? `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}` : 'missing';
+function countManifest(value) {
+  const counts = { documents: 0, indexed: 0, failed: 0, pdf_pages: 0 };
+  for (const doc of Object.values(value.documents ?? {})) {
+    counts.documents++;
+    if (doc.status === 'indexed') counts.indexed++;
+    if (doc.status === 'failed') counts.failed++;
+    counts.pdf_pages += Number(doc.pages) || 0;
+  }
+  return counts;
+}
+let summaryCache, summaryPending;
+export async function manifestSummary() {
+  if (summaryPending) return summaryPending;
+  summaryPending = (async () => {
+    const stat = await fs.stat(manifestPath).catch(e => { if (e.code !== 'ENOENT') throw e; return null; });
+    const key = manifestKey(stat);
+    if (summaryCache?.key === key) return summaryCache.counts;
+    const file = dataPath('state','manifest-summary.json');
+    const saved = await readJson(file, null).catch(() => null);
+    if (saved?.key === key) { summaryCache = saved; return saved.counts; }
+    const snapshot = await manifestSnapshot();
+    summaryCache = { key: snapshot.key, counts: snapshot.counts };
+    await atomicJson(file, summaryCache);
+    return summaryCache.counts;
+  })().finally(() => { summaryPending = null; });
+  return summaryPending;
+}
+// Writers keep independent mutable copies. Readers share one mtime-checked snapshot.
+let manifestCache, manifestPending;
+export async function manifestSnapshot() {
+  if (manifestPending) return manifestPending;
+  manifestPending = (async () => {
+    const stat = await fs.stat(manifestPath).catch(e => { if (e.code !== 'ENOENT') throw e; return null; });
+    const key = manifestKey(stat);
+    if (manifestCache?.key === key) return manifestCache;
+    const value = await manifest();
+    const counts = countManifest(value), bySlug = new Map();
+    for (const doc of Object.values(value.documents)) {
+      const slug = normalizeSlug(doc.wiki_slug ?? '');
+      if (slug && !bySlug.has(slug)) bySlug.set(slug, doc);
+    }
+    return manifestCache = { key, value, counts, bySlug };
+  })().finally(() => { manifestPending = null; });
+  return manifestPending;
+}
 export async function ensureDirs() {
   for (const d of ['raw','parsed','wiki/sources','wiki/concepts','wiki/claims','wiki/hypotheses','wiki/factors','wiki/strategies','wiki/experiments','wiki/datasets','inbox','state','logs','backups','models','cache','runtime']) {
     await fs.mkdir(dataPath(d), {recursive:true});

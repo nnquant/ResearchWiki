@@ -1,16 +1,19 @@
 import type { CompletionContext, CompletionResult } from '@codemirror/autocomplete';
-import type { IndexEntry } from '../api/types';
-import { rankPages } from '../lib/fuzzy';
+import type { PageList } from '../api/types';
+import { api } from '../api/client';
 import { slugBasename } from '../lib/slug';
 
 /** Autocomplete `[[` with page titles; inserts `[[slug|title]]` (or `[[slug]]` when the title equals the slug tail). */
-export function wikilinkCompletion(getIndex: () => IndexEntry[]) {
-  return (context: CompletionContext): CompletionResult | null => {
+export function wikilinkCompletion() {
+  return async (context: CompletionContext): Promise<CompletionResult | null> => {
     const match = context.matchBefore(/\[\[([^\]\n]*)$/);
     if (!match) return null;
     const typed = match.text.slice(2);
-    const index = getIndex();
-    const ranked = typed ? rankPages(index, typed, 12).map(r => r.item) : index.slice(0, 12);
+    const controller = new AbortController();
+    context.addEventListener('abort', () => controller.abort(), { onDocChange: true });
+    const result = await api<PageList>(`/api/pages?${new URLSearchParams({ q: typed, limit: '12', lookup: 'true' })}`, { signal: controller.signal }).catch(() => null);
+    if (!result || context.aborted) return null;
+    const ranked = result.items;
     const closing = context.state.sliceDoc(context.pos, context.pos + 2) === ']]' ? '' : ']]';
     return {
       from: match.from,

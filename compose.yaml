@@ -3,6 +3,8 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
+    shm_size: ${WIKI_PG_SHM_SIZE:-256mb}
+    command: ["postgres", "-c", "shared_buffers=${WIKI_PG_SHARED_BUFFERS:-256MB}", "-c", "effective_cache_size=${WIKI_PG_EFFECTIVE_CACHE_SIZE:-1GB}", "-c", "work_mem=${WIKI_PG_WORK_MEM:-16MB}", "-c", "maintenance_work_mem=${WIKI_PG_MAINTENANCE_WORK_MEM:-128MB}", "-c", "jit=off", "-c", "random_page_cost=1.1"]
     environment:
       POSTGRES_DB: gbrain
       POSTGRES_USER: gbrain

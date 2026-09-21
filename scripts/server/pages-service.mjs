@@ -1,11 +1,12 @@
 import { matchesTags } from '../query/contract.mjs';
 import fs from 'node:fs/promises';
-import { manifest, assetUrl, dataPath } from '../common.mjs';
+import { manifestSnapshot, assetUrl, dataPath, readJson, atomicJson, sha } from '../common.mjs';
 import * as db from './db.mjs';
 import { readPage, scanWiki, splitFrontmatter, countPdfPages } from './wiki-files.mjs';
 import { normalizeSlug, editability, RELATION_FIELDS, relationTarget, typeForSlug, TYPE_LABELS, PAGE_TYPES, dirForType } from './slugs.mjs';
 import { HttpError } from './errors.mjs';
 import { articleMetadataOf } from '../article-metadata.mjs';
+import { readGraphHeader } from './page-header.mjs';
 
 let lastDbError = null;
 export function dbError() { return lastDbError; }
@@ -23,24 +24,62 @@ async function safeDb(fn, fallback) {
 
 /** Frontmatter metadata cache keyed by slug, invalidated by mtime. */
 const metaCache = new Map();
+const metaFile = dataPath('state', 'page-meta-cache.json');
+let loadedMeta;
+let metaRevision = 0, persistedRevision = 0, fileIndexPending, fileIndexSnapshot;
+function loadMeta() {
+  return loadedMeta ??= readJson(metaFile, null).then(saved => {
+    if (saved?.version === 1) for (const [slug, item] of saved.entries) metaCache.set(slug, item);
+  }).catch(() => {});
+}
 
 async function pageMeta(entry) {
   const cached = metaCache.get(entry.slug);
-  if (cached && cached.mtime === entry.mtime) return cached.meta;
-  const text = await fs.readFile(entry.file, 'utf8');
-  const { frontmatter, body } = splitFrontmatter(text);
+  if (cached && cached.mtime === entry.mtime && cached.size === entry.size) return cached.meta;
+  const { frontmatter, title, metadata_error } = await readGraphHeader(entry.file).catch(error => {
+    if (error.code === 'ENOENT') throw error;
+    return { frontmatter: {}, title: entry.slug, metadata_error: true };
+  });
+  const type = typeof frontmatter.type === 'string' ? frontmatter.type : (typeForSlug(entry.slug) ?? 'note');
   const meta = {
     slug: entry.slug,
-    title: typeof frontmatter.title === 'string' && frontmatter.title.trim() ? frontmatter.title : (text.match(/^# (.+)$/m)?.[1] ?? entry.slug),
-    type: typeof frontmatter.type === 'string' ? frontmatter.type : (typeForSlug(entry.slug) ?? 'note'),
+    title: typeof frontmatter.title === 'string' && frontmatter.title.trim() ? frontmatter.title : (title ?? entry.slug),
+    type,
+    category: type,
     tags: Array.isArray(frontmatter.tags) ? frontmatter.tags.map(String) : [],
     aliases: Array.isArray(frontmatter.aliases) ? frontmatter.aliases.map(String) : [],
     review_status: typeof frontmatter.review_status === 'string' ? frontmatter.review_status : null,
-    excerpt: excerptOf(body, frontmatter.abstract),
+
+    excerpt: excerptOf('', frontmatter.summary || frontmatter.abstract),
     updated_at: new Date(entry.mtime).toISOString(),
+    ...(metadata_error ? { metadata_error } : {}),
   };
-  metaCache.set(entry.slug, { mtime: entry.mtime, meta });
+  metaCache.set(entry.slug, { mtime: entry.mtime, size: entry.size, meta });
+  metaRevision++;
   return meta;
+}
+
+/** File-only metadata shared by navigation, facets and the richer database index. */
+export async function getFileIndex() {
+  if (fileIndexPending) return fileIndexPending;
+  fileIndexPending = (async () => {
+    const files = await scanWiki();
+    await loadMeta();
+    for (const slug of metaCache.keys()) if (!files.has(slug)) { metaCache.delete(slug); metaRevision++; }
+    const entries = [...files.values()]; let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(8, entries.length) }, async () => {
+      while (cursor < entries.length) await pageMeta(entries[cursor++]);
+    }));
+    if (metaRevision !== persistedRevision) {
+      persistedRevision = metaRevision;
+      void atomicJson(metaFile, { version: 1, entries: [...metaCache] }).catch(() => { persistedRevision = -1; });
+    }
+    if (fileIndexSnapshot?.revision !== metaRevision) {
+      fileIndexSnapshot = { revision: metaRevision, items: entries.map(entry => metaCache.get(entry.slug).meta) };
+    }
+    return { files, items: fileIndexSnapshot.items };
+  })().finally(() => { fileIndexPending = null; });
+  return fileIndexPending;
 }
 
 /**
@@ -55,8 +94,28 @@ function isStale(slug, mtime, updatedAt) {
 }
 
 /** Lightweight index of every page (DB rows first, disk-only pages appended). */
+let indexSnapshot, indexPending;
 export async function getIndex() {
-  const files = await scanWiki();
+  if (indexPending) return indexPending;
+  indexPending = (async () => {
+    const files = await scanWiki();
+    if (indexSnapshot?.files === files && Date.now() - indexSnapshot.checked < 5000) return indexSnapshot.value;
+    const version = await safeDb(db.indexVersion, null);
+    const fingerprint = sha(JSON.stringify([...files.values()].map(e => [e.slug, e.mtime, e.size]).sort((a,b) => a[0].localeCompare(b[0]))));
+    const key = `${version}:${fingerprint}`;
+    if (version && indexSnapshot?.key === key && Date.now() - indexSnapshot.built < 60000) {
+      indexSnapshot.files = files; indexSnapshot.checked = Date.now();
+      return indexSnapshot.value;
+    }
+    await getFileIndex();
+    const value = await buildPageIndex(files);
+    indexSnapshot = { files, key, value, checked: Date.now(), built: Date.now() };
+    return value;
+  })().finally(() => { indexPending = null; });
+  return indexPending;
+}
+
+async function buildPageIndex(files) {
   const rows = await safeDb(db.listIndex, null);
   const out = [];
   const seen = new Set();
@@ -65,17 +124,20 @@ export async function getIndex() {
       const entry = files.get(row.slug);
       if (!entry) continue;
       seen.add(row.slug);
+      const meta = await pageMeta(entry);
       out.push({
         slug: row.slug,
         title: row.title ?? row.slug,
         type: row.type ?? typeForSlug(row.slug) ?? 'note',
-        review_status: row.review_status ?? null,
-        tags: row.tags ?? [],
-        aliases: Array.isArray(row.aliases) ? row.aliases.map(String) : [],
+        category: meta.category,
+        review_status: meta.review_status,
+        tags: meta.tags,
+        aliases: meta.aliases,
+
         updated_at: row.updated_at,
         created_at: row.created_at,
         backlinks: row.backlinks,
-        excerpt: (await pageMeta(entry)).excerpt,
+        excerpt: meta.excerpt,
         indexed: true,
         stale: isStale(row.slug, entry.mtime, row.updated_at),
       });
@@ -89,20 +151,55 @@ export async function getIndex() {
   return out;
 }
 
+/** Entity browsing needs only matching headers, never the full-library body index. */
+export async function getScopedIndex(slugs) {
+  const files = await scanWiki();
+  const entries = [...slugs].map(slug => files.get(slug)).filter(Boolean);
+  const out = [];
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(8, entries.length) }, async () => {
+    while (cursor < entries.length) {
+      const entry = entries[cursor++];
+      const { frontmatter: fm, title } = await readGraphHeader(entry.file);
+      const type = typeof fm.type === 'string' ? fm.type : typeForSlug(entry.slug) ?? 'note';
+      out.push({ slug: entry.slug, title: fm.title || title || entry.slug, type,
+        category: type, tags: Array.isArray(fm.tags) ? fm.tags.map(String) : [],
+        aliases: Array.isArray(fm.aliases) ? fm.aliases.map(String) : [],
+        review_status: fm.review_status ?? null,
+        excerpt: excerptOf('', fm.summary || fm.abstract),
+        updated_at: new Date(entry.mtime).toISOString(), created_at: fm.created_at ?? null,
+        backlinks: null });
+    }
+  }));
+  return out;
+}
+
 /** Use the same page inventory as the sidebar, including pages not indexed by GBrain. */
 export function filterPageIndex(index, filters) {
   let items = index;
-  if (filters.type?.length) items = items.filter(x => filters.type.includes(x.type));
-  items = items.filter(x => matchesTags(x.tags, { tags_all: [...(filters.tags_all ?? []), ...(filters.tag ? [filters.tag] : [])], tags_any: filters.tags_any ?? [], tags_none: filters.tags_none ?? [] }));
+  if (filters.type?.length) items = items.filter(x => filters.type.includes(x.category ?? x.type));
+  if (filters.tag) items = items.filter(x => x.tags.includes(filters.tag));
+  items = items.filter(x => matchesTags(x.tags, filters));
   if (filters.status) items = items.filter(x => x.review_status === filters.status);
   if (filters.q) {
     const q = filters.q.toLowerCase();
-    items = items.filter(x => (x.title + ' ' + x.slug).toLowerCase().includes(q));
+    items = items.filter(x => (filters.lookup
+      ? [x.title, x.slug, ...(x.aliases ?? []), ...(x.research?.tickers ?? [])]
+      : [x.title, x.slug, ...(x.tags ?? []), ...(x.aliases ?? []), ...(x.research?.tickers ?? []), x.research?.region ?? '']).some(value => String(value).toLowerCase().includes(q)));
   }
   const key = { updated: 'updated_at', created: 'created_at', title: 'title', type: 'type', slug: 'slug' }[filters.sort] ?? 'updated_at';
   const direction = filters.dir === 'asc' ? 1 : -1;
+  const lookupScore = item => {
+    const q = filters.q?.toLowerCase();
+    if (!filters.lookup || !q) return 0;
+    if ([item.title, item.slug].some(v => v?.toLowerCase() === q)) return 3;
+    if ((item.aliases ?? []).some(v => v.toLowerCase() === q)) return 2;
+    return [item.title, item.slug, ...(item.research?.tickers ?? [])].some(v => v?.toLowerCase().startsWith(q)) ? 1 : 0;
+  };
   items = [...items].sort((a, b) => {
-    const left = a[key], right = b[key];
+    const relevance = lookupScore(b) - lookupScore(a);
+    if (relevance) return relevance;
+    const left = key === 'type' ? a.category ?? a.type : a[key], right = key === 'type' ? b.category ?? b.type : b[key];
     if (left == null && right != null) return 1;
     if (left != null && right == null) return -1;
     const compared = key.endsWith('_at')
@@ -114,21 +211,27 @@ export function filterPageIndex(index, filters) {
   return { total: items.length, items: items.slice(offset, offset + limit).map(x => ({ ...x, backlinks: x.backlinks ?? null })) };
 }
 
-export async function typesWithCounts() {
-  const index = await getIndex();
+export async function typesWithCounts(index = null) {
+  index ??= await getIndex();
   const counts = new Map();
-  for (const item of index) counts.set(item.type, (counts.get(item.type) ?? 0) + 1);
-  const known = PAGE_TYPES.map(type => ({ type, label: TYPE_LABELS[type] ?? type, dir: dirForType(type), n: counts.get(type) ?? 0 }));
+  for (const item of index) {
+    const category = item.category ?? item.type;
+    counts.set(category, (counts.get(category) ?? 0) + 1);
+  }
+  const known = PAGE_TYPES.map(type => ({ type, label: type === 'source' ? '待分类文献' : TYPE_LABELS[type] ?? type, dir: dirForType(type), n: counts.get(type) ?? 0 }));
   for (const [type, n] of counts) if (!PAGE_TYPES.includes(type)) known.push({ type, label: type, dir: null, n });
   return known;
 }
 
+const tagCountsCache = new WeakMap();
 export async function tagsWithCounts() {
-  const rows = await safeDb(db.tagCounts, null);
-  if (rows) return rows;
+  const index = await getIndex();
+  if (tagCountsCache.has(index)) return tagCountsCache.get(index);
   const counts = new Map();
-  for (const item of await getIndex()) for (const tag of item.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-  return [...counts].map(([tag, n]) => ({ tag, n })).sort((a, b) => b.n - a.n || a.tag.localeCompare(b.tag));
+  for (const item of index) for (const tag of item.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  const result = [...counts].map(([tag, n]) => ({ tag, n })).sort((a, b) => b.n - a.n || a.tag.localeCompare(b.tag));
+  tagCountsCache.set(index, result);
+  return result;
 }
 
 function groupRelations(links, into) {
@@ -141,8 +244,7 @@ function groupRelations(links, into) {
 async function provenanceFor(page) {
   const fm = page.frontmatter;
   if (page.type !== 'source' && !fm.raw_path) return null;
-  const docs = Object.values((await manifest()).documents);
-  const doc = docs.find(d => normalizeSlug(d.wiki_slug ?? '') === page.slug) ?? null;
+  const doc = (await manifestSnapshot()).bySlug.get(page.slug) ?? null;
   const urlFor = rel => {
     if (!rel) return null;
     try { return assetUrl(dataPath(rel)); } catch { return null; }

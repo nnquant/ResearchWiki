@@ -27,6 +27,6 @@
     "port": 8020,
     "publicBaseUrl": "",
     "wikiBaseUrl": "",
-    "maxConcurrent": 8
+    "maxConcurrent": 4
   }
 }

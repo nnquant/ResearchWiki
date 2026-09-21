@@ -16,7 +16,8 @@
     "dev": "npm run dev -w web",
     "build": "npm run build -w web",
     "typecheck": "npm run typecheck -w web",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "research:lexical-index": "node scripts/query/lexical-index.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

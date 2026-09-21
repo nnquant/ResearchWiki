@@ -58,13 +58,21 @@ export function validateFilters(node, depth = 0, count = { n: 0 }) {
 }
 
 /** Every value is bound; only validated field/operation names influence SQL. */
-export function filterSql(filter, params, alias = 'd') {
+export function filterSql(filter, params, alias = 'd', { frozenEntities = false } = {}) {
   if (!filter) return 'TRUE';
   const bind = value => { params.push(value); return `$${params.length}`; };
-  if (filter.all) return '(' + filter.all.map(f => filterSql(f, params, alias)).join(' AND ') + ')';
-  if (filter.any) return '(' + filter.any.map(f => filterSql(f, params, alias)).join(' OR ') + ')';
-  if (filter.not) return `(NOT ${filterSql(filter.not, params, alias)})`;
+  if (filter.all) return '(' + filter.all.map(f => filterSql(f, params, alias, { frozenEntities })).join(' AND ') + ')';
+  if (filter.any) return '(' + filter.any.map(f => filterSql(f, params, alias, { frozenEntities })).join(' OR ') + ')';
+  if (filter.not) return `(NOT ${filterSql(filter.not, params, alias, { frozenEntities })})`;
   const { field, op, value } = filter;
+  if (field === 'entity_ids' && !frozenEntities) {
+    const exists = condition => `EXISTS(SELECT 1 FROM research_query.document_entities em WHERE em.document_id=${alias}.document_id AND em.revision_id=${alias}.revision_id${condition})`;
+    if (op === 'exists') return `(${exists('')} = ${bind(value)})`;
+    const list = bind(Array.isArray(value) ? value : [value]);
+    if (op === 'contains_all') return `NOT EXISTS(SELECT 1 FROM unnest(${list}::text[]) required(entity_id) WHERE NOT ${exists(' AND em.entity_id=required.entity_id')})`;
+    const expression = exists(` AND em.entity_id=ANY(${list}::text[])`);
+    return op === 'contains_none' ? `NOT ${expression}` : expression;
+  }
   const key = bind(field), json = `${alias}.metadata -> ${key}`, scalar = `${alias}.metadata ->> ${key}`;
   if (op === 'exists') return `((${json} IS NOT NULL AND ${json} <> 'null'::jsonb AND ${json} <> '[]'::jsonb AND ${json} <> '\"\"'::jsonb) = ${bind(value)})`;
   if (FIELDS[field] === 'array') {
@@ -95,7 +103,21 @@ export function terms(value) {
   return [...segmenter.segment(value.normalize('NFKC').toLowerCase())].filter(s => s.isWordLike).map(s => s.segment);
 }
 export function tokenText(value) { return terms(value).join(' '); }
-export function tsQuery(value) { return [...new Set(terms(value))].slice(0, 80).map(t => `'${t.replace(/'/g, "''")}'`).join(' | '); }
+export function queryTerms(value) {
+  const segments = [...segmenter.segment(value.normalize('NFKC').toLowerCase())];
+  const groups = []; let previousEnd = -1, singles = [];
+  const flush = () => { if (singles.length) groups.push(singles.map(t => `'${t}'`).join(' <-> ')); singles = []; };
+  for (const part of segments) {
+    if (!part.isWordLike) { flush(); previousEnd = -1; continue; }
+    if (/^\p{Script=Han}$/u.test(part.segment)) {
+      if (part.index !== previousEnd) flush();
+      singles.push(part.segment);
+    } else { flush(); groups.push(`'${part.segment.replace(/'/g, "''")}'`); }
+    previousEnd = part.index + part.segment.length;
+  }
+  flush(); return [...new Set(groups)].slice(0, 80);
+}
+export function tsQuery(value, match = 'any') { return queryTerms(value).map(t => `(${t})`).join(match === 'all' ? ' & ' : ' | '); }
 
 export const FILTER_SCHEMA = {
   anyOf: [

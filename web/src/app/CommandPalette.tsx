@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useUi } from './UiContext';
-import { useIndex, useSearch, useReindex } from '../api/hooks';
+import { usePageLookup, useSearch, useReindex } from '../api/hooks';
 import { pageUrl } from '../api/client';
-import { rankPages } from '../lib/fuzzy';
 import { Highlight, snippetAround } from '../lib/highlight';
 import { typeLabel } from '../lib/types';
 import { TypeDot } from './ui';
@@ -34,9 +33,10 @@ export function CommandPalette() {
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const { data: index } = useIndex();
   const reindex = useReindex();
   const debounced = useDebounced(query.trim(), 400);
+  const { data: lookup } = usePageLookup(debounced);
+  const index = lookup?.items;
   const remote = useSearch({ q: debounced, mode: 'fast', limit: 5 }, debounced.length >= 2);
 
   useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
@@ -55,7 +55,7 @@ export function CommandPalette() {
     ];
     const lower = q.toLowerCase();
     const matchedActions = q ? actions.filter(a => (a.title + (a.sub ?? '')).toLowerCase().includes(lower) || /^(新建|导入|索引|主题|状态|资料)/.test(q)) : actions;
-    const pages: Item[] = rankPages(index ?? [], q, 8).map(({ item }) => ({
+    const pages: Item[] = (index ?? []).slice(0, 20).map(item => ({
       id: `p:${item.slug}`,
       section: '页面',
       title: item.title,

@@ -1,7 +1,7 @@
 import { MultiTagFilter, readTagSelection, writeTagSelection } from '../app/MultiTagFilter';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { usePages, useTypes, useTags } from '../api/hooks';
+import { usePages, useTypes, useGraphTags } from '../api/hooks';
 import { pageUrl } from '../api/client';
 import { useCrumbs } from '../app/UiContext';
 import { Loading, ErrorBlock, TypeBadge, StatusChip, Empty } from '../app/ui';
@@ -15,7 +15,9 @@ export function LibraryPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const { data: types } = useTypes();
-  const { data: tags } = useTags();
+  const [tagQuery, setTagQuery] = useState('');
+  const { data: tagOptions } = useGraphTags(tagQuery);
+  const tags = tagOptions?.tags;
   const [focus, setFocus] = useState(-1);
 
   const type = params.get('type') ?? '';
@@ -97,7 +99,7 @@ export function LibraryPage() {
           <option value="">全部状态</option>
           {Object.entries(STATUS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select>
-        <MultiTagFilter tags={tags ?? []} value={selectedTags} onChange={value => { const next = new URLSearchParams(params); writeTagSelection(next, value); next.delete('page'); setParams(next); }} />
+        <MultiTagFilter onSearch={setTagQuery} tags={tags ?? []} value={selectedTags} onChange={value => { const next = new URLSearchParams(params); writeTagSelection(next, value); next.delete('page'); setParams(next); }} />
         {(type || Object.values(selectedTags).some(v => v.length) || status || q) && <button className="btn ghost sm" onClick={() => setParams(new URLSearchParams())}>清除筛选</button>}
       </div>
 
@@ -129,7 +131,7 @@ export function LibraryPage() {
                     {item.excerpt && <span className="article-excerpt" title={item.excerpt}>{item.excerpt}</span>}
                   </td>
                   <td><TypeBadge type={item.type} /></td>
-                  <td>{item.tags.map(t => <span key={t} className="chip" style={{ marginRight: 4 }}>{t}</span>)}</td>
+                  <td>{item.tags.slice(0, 6).map(t => <span key={t} className="chip" style={{ marginRight: 4 }}>{t}</span>)}{item.tags.length > 6 && <span className="muted" title={item.tags.slice(6).join("、")}>+{item.tags.length - 6}</span>}</td>
                   <td><StatusChip status={item.review_status} /></td>
                   <td className="date">{formatDate(item.updated_at)}</td>
                   <td className="num">{item.backlinks ?? '—'}</td>

@@ -9,7 +9,7 @@ export function agentSettings(config) {
   const port = agent.port ?? config.port + 2;
   if (!Number.isInteger(port) || port < 1 || port > 65535 || [config.port, config.mcpPort].includes(port)) throw new Error('agent.port 必须是独立的有效端口');
   const settings = { enabled: agent.enabled !== false, host: agent.host ?? config.host, port,
-    publicBaseUrl: agent.publicBaseUrl || null, wikiBaseUrl: agent.wikiBaseUrl || null, maxConcurrent: agent.maxConcurrent ?? 8 };
+    publicBaseUrl: agent.publicBaseUrl || null, wikiBaseUrl: agent.wikiBaseUrl || null, maxConcurrent: agent.maxConcurrent ?? 4 };
   if (!Number.isInteger(settings.maxConcurrent) || settings.maxConcurrent < 1 || settings.maxConcurrent > 100) throw new Error('agent.maxConcurrent 应为 1–100');
   for (const key of ['publicBaseUrl', 'wikiBaseUrl']) if (settings[key]) {
     const url = new URL(settings[key]);
@@ -48,7 +48,7 @@ function json(res, status, data) {
 }
 
 /** Dedicated authenticated surface: never registers Wiki status, edit, ingest or admin routes. */
-export function createAgentHttpServer({ settings, authorize, execute, assetHandler, installHandler }) {
+export function createAgentHttpServer({ settings, authorize, execute, assetHandler, installHandler, health = async () => ({}), sharedAdmission = false }) {
   let active = 0;
   const server = http.createServer(async (req, res) => {
     res.setHeader('cache-control', 'no-store');
@@ -70,17 +70,29 @@ export function createAgentHttpServer({ settings, authorize, execute, assetHandl
         res.setHeader('www-authenticate', 'Bearer realm="ResearchWiki"');
         throw new HttpError(401, '需要有效的只读 Bearer token', { code: 'UNAUTHORIZED' });
       }
-      if (active >= settings.maxConcurrent) {
+      if (!sharedAdmission && active >= settings.maxConcurrent) {
         res.setHeader('retry-after', '2');
         throw new HttpError(429, '研究服务繁忙，请稍后重试', { code: 'TOO_MANY_REQUESTS' });
       }
       active++; entered = true;
       const baseUrl = settings.publicBaseUrl ?? `http://${req.headers.host.toLowerCase()}`;
       const invoke = async (operation, input, { signal } = {}) => {
-        const result = await execute(operation, input, { signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
-        return networkResult(result, baseUrl, settings.wikiBaseUrl);
+        const started = Date.now(); let result, failure;
+        try {
+          result = await execute(operation, input, { signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
+          return networkResult(result, baseUrl, settings.wikiBaseUrl);
+        } catch (e) { failure = e; throw e; }
+        finally {
+          const latency_ms = Date.now() - started;
+          if (failure || latency_ms >= 1000) console.warn('[research-request] ' + JSON.stringify({ operation, latency_ms,
+            code: failure?.data?.code ?? (failure ? 'REQUEST_FAILED' : 'OK'), request_id: result?.request_id,
+            timings: failure?.queryTimings ?? result?.query_plan?.timings }));
+        }
       };
-      if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok', surface: 'research-read', mcp_url: baseUrl + '/mcp' });
+      if (req.method === 'GET' && url.pathname === '/health') {
+        const details = await health();
+        return json(res, details.database === false ? 503 : 200, { status: details.database === false ? 'degraded' : 'ok', surface: 'research-read', mcp_url: baseUrl + '/mcp', ...details });
+      }
       if (url.pathname === '/mcp') {
         if (req.method !== 'POST') {
           res.setHeader('allow', 'POST');
@@ -95,7 +107,7 @@ export function createAgentHttpServer({ settings, authorize, execute, assetHandl
         finally { await mcp.close(); res.removeListener('close', close); }
         return;
       }
-      const operation = url.pathname.match(/^\/api\/research\/(describe|resolve|query|search|read|related)$/)?.[1];
+      const operation = url.pathname.match(/^\/api\/research\/(describe|resolve|query|search|read|related|graph)$/)?.[1];
       if (operation) {
         if (req.method !== 'POST') { res.setHeader('allow', 'POST'); throw new HttpError(405, '请使用 POST'); }
         if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, '请使用 application/json');
@@ -106,6 +118,7 @@ export function createAgentHttpServer({ settings, authorize, execute, assetHandl
     } catch (error) {
       if (res.headersSent || res.destroyed) { res.end(); return; }
       const status = error.status ?? (error.code === 'ENOENT' ? 404 : 500);
+      if (status === 429) res.setHeader('retry-after', String(error.data?.retry_after ?? 2));
       json(res, status, { error: status >= 500 ? '研究服务暂时不可用' : error.message, code: error.data?.code ?? (status >= 500 ? 'SERVICE_UNAVAILABLE' : 'REQUEST_FAILED') });
     } finally { if (entered) active--; res.removeListener('close', cancel); }
   });

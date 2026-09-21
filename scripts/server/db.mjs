@@ -2,14 +2,28 @@ import fs from 'node:fs/promises';
 import postgres from 'postgres';
 import { dataPath } from '../common.mjs';
 
-let sql = null;
+const pools = new Map();
 
 /** Lazily open a small connection pool against the gbrain database. */
-export async function getSql() {
-  if (sql) return sql;
-  const brain = JSON.parse(await fs.readFile(dataPath('runtime', '.gbrain', 'config.json'), 'utf8'));
-  sql = postgres(brain.database_url, { max: 4, idle_timeout: 120, connect_timeout: 5, onnotice: () => {} });
-  return sql;
+function getPool(role) {
+  if (!pools.has(role)) {
+    const opening = fs.readFile(dataPath('runtime', '.gbrain', 'config.json'), 'utf8').then(contents => {
+      const brain = JSON.parse(contents);
+      return postgres(brain.database_url, { max: 4, idle_timeout: 120, connect_timeout: 5,
+        connection: { application_name: `researchwiki-${role}` }, onnotice: () => {} });
+    }).catch(error => { pools.delete(role); throw error; });
+    pools.set(role, opening);
+  }
+  return pools.get(role);
+}
+export const getSql = () => getPool('wiki-index');
+export const getReadSql = () => getPool('research-read');
+export const getIndexSql = () => getPool('background-index');
+
+export async function indexVersion() {
+  const s = await getSql();
+  const [row] = await s`SELECT count(*)::int AS n,max(updated_at)::text AS updated FROM pages WHERE deleted_at IS NULL`;
+  return JSON.stringify(row);
 }
 
 export async function ping() {
@@ -23,8 +37,8 @@ export async function ping() {
 }
 
 export async function closeDb() {
-  if (sql) await sql.end({ timeout: 2 });
-  sql = null;
+  const current = [...pools.values()]; pools.clear();
+  await Promise.all(current.map(async pending => { const sql = await pending; await sql.end({ timeout: 2 }); }));
 }
 
 const tagsAgg = 'coalesce(array_agg(t.tag ORDER BY t.tag) FILTER (WHERE t.tag IS NOT NULL), ARRAY[]::text[])';
@@ -33,14 +47,12 @@ const tagsAgg = 'coalesce(array_agg(t.tag ORDER BY t.tag) FILTER (WHERE t.tag IS
 export async function listIndex() {
   const s = await getSql();
   return s.unsafe(`
+    WITH backlinks AS (SELECT l.to_page_id,count(*)::int AS n FROM links l
+      JOIN pages origin ON origin.id=l.from_page_id WHERE origin.deleted_at IS NULL GROUP BY l.to_page_id)
     SELECT p.slug, p.title, p.type, p.updated_at, p.created_at,
-           p.frontmatter->>'review_status' AS review_status,
-           (SELECT count(*)::int FROM links l JOIN pages origin ON origin.id = l.from_page_id WHERE l.to_page_id = p.id AND origin.deleted_at IS NULL) AS backlinks,
-           coalesce(p.frontmatter->'aliases', '[]'::jsonb) AS aliases,
-           ${tagsAgg} AS tags
-    FROM pages p LEFT JOIN tags t ON t.page_id = p.id
+           coalesce(b.n,0) AS backlinks
+    FROM pages p LEFT JOIN backlinks b ON b.to_page_id=p.id
     WHERE p.deleted_at IS NULL
-    GROUP BY p.id
     ORDER BY p.updated_at DESC`);
 }
 
@@ -135,18 +147,23 @@ export async function getNeighborhood(slug, { depth = 1, limit = 150, linkTypes 
   let frontier = [center.id];
   const edges = new Map();
   let truncated = false;
+  const edgeLimit = 2000;
   for (let level = 1; level <= depth && frontier.length; level++) {
     const params = [frontier];
     let typeFilter = '';
     if (linkTypes.length) { params.push(linkTypes); typeFilter = 'AND l.link_type = ANY($2::text[])'; }
+    params.push(edgeLimit + 1);
     const rows = await s.unsafe(`
-      SELECT l.from_page_id, l.to_page_id, l.link_type, l.link_source
+      SELECT l.from_page_id, l.to_page_id, l.link_type, l.link_source, l.context
       FROM links l
       JOIN pages pf ON pf.id = l.from_page_id AND pf.deleted_at IS NULL
       JOIN pages pt ON pt.id = l.to_page_id AND pt.deleted_at IS NULL
-      WHERE (l.from_page_id = ANY($1::int[]) OR l.to_page_id = ANY($1::int[])) ${typeFilter}`, params);
+      WHERE (l.from_page_id = ANY($1::int[]) OR l.to_page_id = ANY($1::int[])) ${typeFilter}
+      ORDER BY l.from_page_id, l.to_page_id, l.link_type, l.link_source LIMIT $${params.length}`, params);
+    if (rows.length > edgeLimit) truncated = true;
     const next = [];
-    for (const row of rows) {
+    for (const row of rows.slice(0, edgeLimit)) {
+      if (edges.size >= edgeLimit) { truncated = true; break; }
       for (const id of [row.from_page_id, row.to_page_id]) {
         if (ids.has(id)) continue;
         if (ids.size >= limit) { truncated = true; continue; }
@@ -154,7 +171,7 @@ export async function getNeighborhood(slug, { depth = 1, limit = 150, linkTypes 
         next.push(id);
       }
       if (ids.has(row.from_page_id) && ids.has(row.to_page_id)) {
-        edges.set(`${row.from_page_id}>${row.to_page_id}>${row.link_type}`, row);
+        edges.set(`${row.from_page_id}>${row.to_page_id}>${row.link_type}>${row.link_source}`, row);
       }
     }
     frontier = next;
@@ -168,7 +185,7 @@ export async function getNeighborhood(slug, { depth = 1, limit = 150, linkTypes 
     center: center.slug,
     nodes: nodes.map(n => ({ id: n.slug, title: n.title, type: n.type, degree: n.degree, level: ids.get(n.id) })),
     edges: [...edges.values()].map(e => ({
-      source: bySlug.get(e.from_page_id), target: bySlug.get(e.to_page_id), link_type: e.link_type, link_source: e.link_source,
+      source: bySlug.get(e.from_page_id), target: bySlug.get(e.to_page_id), link_type: e.link_type, link_source: e.link_source, context: e.context,
     })),
     truncated,
   };

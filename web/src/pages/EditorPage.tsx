@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useBlocker, useNavigate, useParams } from 'react-router';
-import { useRawPage, useIndex, useSavePage } from '../api/hooks';
-import { ApiError, pageUrl } from '../api/client';
+import { useRawPage, useSavePage } from '../api/hooks';
+import { api, ApiError, pageUrl } from '../api/client';
 import { useUi, useCrumbs } from '../app/UiContext';
 import { Loading, ErrorBlock, Dialog } from '../app/ui';
 import { CodeEditor } from '../editor/CodeEditor';
@@ -9,7 +9,9 @@ import { lintPage } from '../editor/frontmatterLint';
 import { Markdown } from '../reader/Markdown';
 import { relativeTime } from '../lib/format';
 import type { Diagnostic } from '@codemirror/lint';
-import type { ValidationError } from '../api/types';
+import type { ValidationError, IndexEntry } from '../api/types';
+import { RELATION_FIELDS } from '../lib/types';
+import { normalizeSlug } from '../lib/slug';
 
 function stripFrontmatter(text: string): string {
   return text.replace(/^---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/, '');
@@ -21,7 +23,6 @@ export function EditorPage() {
   const navigate = useNavigate();
   const { theme, toast } = useUi();
   const { data: raw, isLoading, error } = useRawPage(slug);
-  const { data: index } = useIndex();
   const save = useSavePage();
 
   const [text, setText] = useState<string | null>(null);
@@ -42,11 +43,26 @@ export function EditorPage() {
   const title = useMemo(() => (text ?? '').match(/^title:\s*["']?(.+?)["']?\s*$/m)?.[1] ?? slug, [text, slug]);
   useCrumbs([{ label: '编辑' }, { label: title }]);
 
-  const lint = useCallback((value: string) => {
-    const result = lintPage(value, slug, index ?? []);
-    setProblems(result.diagnostics);
+  const lint = useCallback(async (value: string) => {
+    const parsed = lintPage(value, slug, []);
+    const references = [...value.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)].map(m => m[1].split('#')[0]);
+    for (const field of RELATION_FIELDS) references.push(...[parsed.frontmatter?.[field] ?? []].flat().map(String));
+    const slugs = [...new Set(references.map(s => normalizeSlug(s.replace(/^\[\[|\]\]$/g, '').split('|')[0])).filter(Boolean))];
+    let items: IndexEntry[] = [];
+    try {
+      for (let offset = 0; offset < slugs.length; offset += 500) {
+        const targets = await api<{items: IndexEntry[]}>('/api/page-targets', { method: 'POST', body: { slugs: slugs.slice(offset, offset + 500) } });
+        items.push(...targets.items);
+      }
+    } catch {
+      const diagnostics: Diagnostic[] = [{ from: 0, to: 0, severity: 'warning', message: '链接校验暂时不可用，保存时会再次校验' }];
+      if (textRef.current === value) setProblems(diagnostics);
+      return diagnostics;
+    }
+    const result = lintPage(value, slug, items);
+    if (textRef.current === value) setProblems(result.diagnostics);
     return result.diagnostics;
-  }, [slug, index]);
+  }, [slug]);
 
   const blocker = useBlocker(dirty && !save.isPending);
   useEffect(() => {
@@ -117,7 +133,7 @@ export function EditorPage() {
         </button>
       </div>
       <div className="editor-body" data-split={split}>
-        <CodeEditor initial={raw.content} dark={theme === 'dark'} index={index ?? []} lint={lint} onChange={setText} onSave={() => doSave(false)} />
+        <CodeEditor initial={raw.content} dark={theme === 'dark'} lint={lint} onChange={setText} onSave={() => doSave(false)} />
         {split && (
           <div className="editor-preview">
             <Markdown markdown={stripFrontmatter(text ?? '')} />

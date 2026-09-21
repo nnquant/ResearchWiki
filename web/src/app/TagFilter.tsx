@@ -7,9 +7,10 @@ interface Props {
   onChange: (tag: string | null) => void;
   canClear: boolean;
   onClear: () => void;
+  onSearch?: (query: string) => void;
 }
 
-export function TagFilter({ tags, value, onChange, canClear, onClear }: Props) {
+export function TagFilter({ tags, value, onChange, canClear, onClear, onSearch }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
@@ -58,6 +59,7 @@ export function TagFilter({ tags, value, onChange, canClear, onClear }: Props) {
           aria-expanded={open} aria-haspopup="dialog" aria-controls={open ? id : undefined}
           onClick={() => {
             setSearch('');
+            onSearch?.('');
             const colon = value.search(/[:：]/);
             setCategory(colon > 0 ? value.slice(0, colon).trim() : '');
             setOpen(!open);
@@ -71,13 +73,13 @@ export function TagFilter({ tags, value, onChange, canClear, onClear }: Props) {
       {open && (
         <div className="tag-filter-panel" id={id} role="dialog" aria-label="分类与标签筛选">
           <div className="tag-filter-search">
-            <input ref={searchInput} className="input" value={search} onChange={event => setSearch(event.target.value)}
+            <input ref={searchInput} className="input" value={search} onChange={event => { setSearch(event.target.value); onSearch?.(event.target.value); }}
               placeholder="搜索分类或标签…" aria-label="搜索分类或标签" />
           </div>
           <div className="tag-filter-categories" aria-label="标签类别">
             {groups.map(([name, items]) => (
               <button type="button" key={name} aria-pressed={!search.trim() && category === name}
-                onClick={() => { setCategory(name); setSearch(''); }}>
+                onClick={() => { setCategory(name); setSearch(''); onSearch?.(name); }}>
                 {name || '全部'} <span>{items.length}</span>
               </button>
             ))}

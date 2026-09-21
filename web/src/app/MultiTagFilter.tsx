@@ -11,7 +11,7 @@ export function writeTagSelection(params: URLSearchParams, selected: TagSelectio
   for (const key of ['tags_all', 'tags_any', 'tags_none'] as const) { params.delete(key); selected[key].forEach(t => params.append(key, t)); }
 }
 const labels = { tags_all: '同时包含', tags_any: '包含任意', tags_none: '排除' };
-export function MultiTagFilter({ tags, value, onChange }: { tags: TagCount[]; value: TagSelection; onChange: (v: TagSelection) => void }) {
+export function MultiTagFilter({ tags, value, onChange, onSearch }: { tags: TagCount[]; value: TagSelection; onChange: (v: TagSelection) => void; onSearch?: (q: string) => void }) {
   const [mode, setMode] = useState<keyof TagSelection>('tags_all');
   const selected = Object.values(value).some(v => v.length);
   return <div className="multi-tag-filter">
@@ -19,7 +19,7 @@ export function MultiTagFilter({ tags, value, onChange }: { tags: TagCount[]; va
       <select className="select" value={mode} onChange={e => setMode(e.target.value as keyof TagSelection)} aria-label="标签组合方式">
         {Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select>
-      <TagFilter tags={tags} value="" onChange={tag => { if (tag) onChange({ ...value, [mode]: [...new Set([...value[mode], tag])] }); }} canClear={selected} onClear={() => onChange({ tags_all: [], tags_any: [], tags_none: [] })} />
+      <TagFilter tags={tags} value="" onSearch={onSearch} onChange={tag => { if (tag) onChange({ ...value, [mode]: [...new Set([...value[mode], tag])] }); }} canClear={selected} onClear={() => onChange({ tags_all: [], tags_any: [], tags_none: [] })} />
     </div>
     {Object.entries(value).map(([key, values]) => values.length > 0 && <div className="row multi-tag-selected" key={key}>
       <span className="muted small">{labels[key as keyof TagSelection]}</span>

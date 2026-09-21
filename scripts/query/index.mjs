@@ -2,16 +2,19 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { randomUUID } from 'node:crypto';
-import { root, manifest, dataPath } from '../common.mjs';
-import { getSql, closeDb } from '../server/db.mjs';
+import { root, manifestSnapshot, dataPath } from '../common.mjs';
+import { getIndexSql, closeDb } from '../server/db.mjs';
 import { normalizeSlug, typeForSlug, RELATION_FIELDS } from '../server/slugs.mjs';
 import { decorateMetadata, queryProfile } from './profile.mjs';
 import { dateOnly, validDate } from './dates.mjs';
 import { hash, makeBlocks } from './blocks.mjs';
 import { FIELDS, tokenText } from './contract.mjs';
 import { fileURLToPath } from 'node:url';
+import { refreshGraphIndex, graphEnabled } from './graph-hooks.mjs';
+import { indexLexicalDocument } from './lexical-index.mjs';
 
-const INDEX_VERSION = hash(JSON.stringify(['rq-index-2', queryProfile, FIELDS]));
+// Virtual graph fields must not force a full-text reindex or change immutable revisions.
+const INDEX_VERSION = hash(JSON.stringify(['rq-index-2', Object.fromEntries(Object.entries(queryProfile).filter(([key]) => key !== 'graphAdapter')), Object.fromEntries(Object.entries(FIELDS).filter(([key]) => key !== 'entity_ids'))]));
 export async function safeFile(relative) {
   if (!relative || typeof relative !== 'string') return null;
   const candidate = path.resolve(root, relative);
@@ -46,6 +49,7 @@ async function wikiInventory() {
 }
 
 export function metadataFor(fm, doc = {}, slug = '') {
+  fm = cleanDatabaseValue(fm); doc = cleanDatabaseValue(doc);
   let combined = { ...(doc.article_metadata ?? {}), ...fm };
   const pageType = fm.type ?? (doc.id ? 'source' : typeForSlug(slug) ?? 'note');
   combined = decorateMetadata(combined, pageType);
@@ -54,6 +58,7 @@ export function metadataFor(fm, doc = {}, slug = '') {
   metadata.tags = combined.tags ?? [];
   metadata.tickers = combined.tickers ?? [];
   for (const [field, type] of Object.entries(FIELDS)) {
+    if (field === 'entity_ids') continue;
     if (type === 'array') metadata[field] = Array.isArray(metadata[field]) ? [...new Set(metadata[field].filter(x => typeof x === 'string' && x.trim()))] : [];
     else if (type === 'date') {
       const value = dateOnly(metadata[field]);
@@ -66,9 +71,17 @@ export function metadataFor(fm, doc = {}, slug = '') {
   return metadata;
 }
 
+/** PostgreSQL text/jsonb cannot represent NUL, including inside nested metadata. */
+export function cleanDatabaseValue(value) {
+  if (typeof value === 'string') return value.replace(/\u0000/g, '');
+  if (Array.isArray(value)) return value.map(cleanDatabaseValue);
+  if (value && typeof value === 'object' && !(value instanceof Date)) return Object.fromEntries(Object.entries(value).map(([k, v]) => [k.replace(/\u0000/g, ''), cleanDatabaseValue(v)]));
+  return value;
+}
+
 /** Separate, resumable text projection. No LLM, embedding, or source-file mutation. */
 export async function buildIndex({ progress = () => {}, force = false } = {}) {
-  const sql = await getSql();
+  const sql = await getIndexSql();
   await sql.unsafe(await fs.readFile(new URL('./schema.sql', import.meta.url), 'utf8'));
   const lease = await sql.reserve();
   const [lock] = await lease`SELECT pg_try_advisory_lock(78314026) AS acquired`;
@@ -77,7 +90,7 @@ export async function buildIndex({ progress = () => {}, force = false } = {}) {
   const stats = { run, started_at: started, seen: 0, changed: 0, unchanged: 0, failed: 0, text_ready: 0, manifest_statuses: {}, errors: [] };
   try {
     await lease`INSERT INTO research_query.state VALUES ('building', ${sql.json({ run, started_at: started })}) ON CONFLICT(key) DO UPDATE SET value=excluded.value`;
-    const catalog = await manifest(), files = await wikiInventory();
+    const { value: catalog } = await manifestSnapshot(), files = await wikiInventory();
     const priorRows = await lease`SELECT document_id,source_key,slug,signature FROM research_query.documents`;
     const previous = new Map(priorRows.map(x => [x.source_key, x]));
     const priorWikiSlugs = new Map(priorRows.filter(x => x.source_key.startsWith('wiki:')).map(x => [x.slug, x]));
@@ -88,7 +101,11 @@ export async function buildIndex({ progress = () => {}, force = false } = {}) {
       const wiki = files.get(slug); files.delete(slug);
       items.push({ doc, slug, wiki, source_key: `manifest:${doc.id}` });
     }
-    for (const [slug, wiki] of files) items.push({ doc: {}, slug, wiki, source_key: `wiki:${wiki.dev}:${wiki.ino}` });
+    for (const [slug, wiki] of files) {
+      // NTFS file IDs exceed Number.MAX_SAFE_INTEGER; rounded inode numbers collide.
+      const identity = await fs.stat(wiki.file, { bigint: true });
+      items.push({ doc: {}, slug, wiki, source_key: `wiki:${identity.dev}:${identity.ino}` });
+    }
     const seen = [];
     for (const item of items) {
       const { doc, slug, wiki, source_key } = item;
@@ -97,26 +114,29 @@ export async function buildIndex({ progress = () => {}, force = false } = {}) {
       try {
         const source = doc.id ? (await safeFile(doc.paged_path) ?? await safeFile(doc.parsed_path) ?? wiki) : wiki;
         const signature = hash(JSON.stringify({ version: INDEX_VERSION, doc, wiki, source }));
-        if (!force && old?.signature === signature) { stats.unchanged++; continue; }
+        if (!force && old?.signature === signature) {
+          if (old.source_key !== source_key) await lease`UPDATE research_query.documents SET source_key=${source_key} WHERE document_id=${id}`;
+          stats.unchanged++; continue;
+        }
         const wikiText = wiki ? await fs.readFile(wiki.file, 'utf8') : '';
         let fm = {}, wikiBody = wikiText, metadataError = null;
         try { const parsed = matter(wikiText); fm = parsed.data; wikiBody = parsed.content; } catch (e) { metadataError = e.message; }
-        const body = source ? (source === wiki ? wikiBody : await fs.readFile(source.file, 'utf8')) : '';
+        const body = cleanDatabaseValue(source ? (source === wiki ? wikiBody : await fs.readFile(source.file, 'utf8')) : '');
         // A concurrent writer cannot publish a mismatched fingerprint/body pair.
         for (const info of [wiki, source].filter(Boolean)) {
           const fresh = await fs.stat(info.file);
           if (fresh.mtimeMs !== info.mtime || fresh.size !== info.size) throw new Error('材料在读取过程中更新；下次索引重试');
         }
         const metadata = metadataFor(fm, doc, slug);
-        metadata.metadata_error = metadataError;
+        metadata.metadata_error = cleanDatabaseValue(metadataError);
         metadata.text_available = Boolean(body);
-        const title = fm.title || doc.title || slug;
-        const provenance = { raw_path: fm.raw_path ?? doc.raw_path ?? null, parsed_path: source?.relative ?? null, source_url: fm.source_url ?? doc.source_url ?? null,
+        const title = cleanDatabaseValue(fm.title || doc.title || slug);
+        const provenance = cleanDatabaseValue({ raw_path: fm.raw_path ?? doc.raw_path ?? null, parsed_path: source?.relative ?? null, source_url: fm.source_url ?? doc.source_url ?? null,
           sha256: doc.sha256 ?? fm.sha256 ?? null, parser: doc.parser ?? null, content_kind: doc.id ? 'source' : fm.translation_of ? 'translation' : 'research_page',
-          published_at_source: metadata.published_at ? 'recorded_metadata' : 'unknown', tag_provenance: 'unknown' };
+          published_at_source: metadata.published_at ? 'recorded_metadata' : 'unknown', tag_provenance: 'unknown' });
         const revision = hash(JSON.stringify({ body, metadata, provenance, title }));
         const blocks = makeBlocks(body, revision);
-        const family = String(doc.sha256 ?? fm.translation_of ?? id);
+        const family = cleanDatabaseValue(String(doc.sha256 ?? fm.translation_of ?? id));
         const header = tokenText([title, ...metadata.tags, ...metadata.tickers, ...metadata.aliases, ...metadata.companies, metadata.summary ?? ''].join(' '));
         await sql.begin(async tx => {
           await tx`INSERT INTO research_query.documents (document_id,source_key,slug,title,family_id,revision_id,metadata,provenance,signature,text_chars,source_mtime,search_vector)
@@ -131,6 +151,7 @@ export async function buildIndex({ progress = () => {}, force = false } = {}) {
                 FROM jsonb_to_recordset(${tx.json(batch)}::jsonb) AS x(document_id text,revision_id text,block_id text,ordinal int,start_offset int,end_offset int,pdf_page int,section jsonb,text text,tokens text)`;
             }
           }
+          await indexLexicalDocument(tx, id, revision);
         });
         stats.changed++; if (body) stats.text_ready++;
       } catch (e) {
@@ -144,11 +165,23 @@ export async function buildIndex({ progress = () => {}, force = false } = {}) {
       await tx`UPDATE research_query.documents SET deleted=true WHERE NOT (document_id=ANY(${seen}::text[]))`;
       await tx`UPDATE research_query.documents t SET family_id=o.family_id FROM research_query.documents o
         WHERE t.metadata->>'translation_of'=o.slug AND NOT t.deleted AND NOT o.deleted AND t.family_id<>o.family_id`;
+    });
+    stats.graph = await refreshGraphIndex(sql);
+    await sql.begin(async tx => {
       const [counts] = await tx`SELECT count(*)::int AS total,count(*) FILTER(WHERE text_chars>0)::int AS text_ready FROM research_query.documents WHERE NOT deleted`;
       stats.catalog_documents = counts.total;
       stats.text_ready = counts.text_ready;
       stats.finished_at = new Date().toISOString();
       stats.snapshot_id = hash(JSON.stringify(stats));
+      await tx`UPDATE research_query.catalog_generations SET retired_at=now() WHERE retired_at IS NULL`;
+      await tx`INSERT INTO research_query.catalog_generations(snapshot_id) VALUES(${stats.snapshot_id})`;
+      await tx`INSERT INTO research_query.catalog_entries(snapshot_id,document_id,revision_id,slug,title,family_id,text_chars,indexed_at,entity_ids,
+          sort_published_at,sort_data_as_of,sort_ingested_at,sort_updated_at)
+        SELECT ${stats.snapshot_id},d.document_id,d.revision_id,d.slug,d.title,d.family_id,d.text_chars,d.indexed_at,
+          ${tx.unsafe(graphEnabled ? "COALESCE((SELECT jsonb_agg(em.entity_id ORDER BY em.entity_id) FROM research_query.document_entities em WHERE em.document_id=d.document_id AND em.revision_id=d.revision_id),'[]'::jsonb)" : "'[]'::jsonb")},
+          d.metadata->>'published_at',d.metadata->>'data_as_of',d.metadata->>'ingested_at',d.metadata->>'updated_at'
+        FROM research_query.documents d WHERE NOT d.deleted`;
+      await tx`DELETE FROM research_query.catalog_generations WHERE retired_at < now() - interval '20 minutes'`;
       await tx`INSERT INTO research_query.state VALUES ('last_index',${tx.json(stats)}) ON CONFLICT(key) DO UPDATE SET value=excluded.value`;
       await tx`DELETE FROM research_query.state WHERE key='building'`;
     });
@@ -161,4 +194,3 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   catch (e) { console.error(e.message); process.exitCode = 1; }
   finally { await closeDb(); }
 }
-

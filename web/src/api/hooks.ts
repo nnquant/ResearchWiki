@@ -39,16 +39,36 @@ export function useBootStatus() {
   return useQuery({ queryKey: keys.status, queryFn: () => loadStatus(), staleTime: 2000 });
 }
 
-export function useIndex() {
-  return useQuery({ queryKey: keys.index, queryFn: () => api<IndexEntry[]>('/api/index'), staleTime: 60_000 });
+export function useIndex(enabled = true) {
+  return useQuery({ queryKey: keys.index, queryFn: () => api<IndexEntry[]>('/api/index'), staleTime: 300_000, enabled });
 }
 
-export function useTypes() {
-  return useQuery({ queryKey: keys.types, queryFn: () => api<TypeCount[]>('/api/types'), staleTime: 60_000 });
+export function usePageLookup(q: string) {
+  return useQuery({ queryKey: ['pages', 'lookup', q], queryFn: ({ signal }) => api<PageList>(`/api/pages?${new URLSearchParams({ q, limit: '20', lookup: 'true' })}`, { signal }), staleTime: 300_000 });
+}
+export function usePageTargets(slugs: string[]) {
+  return useQuery({ queryKey: ['pages', 'targets', ...slugs], queryFn: ({ signal }) => api<{ items: IndexEntry[] }>('/api/page-targets', { method: 'POST', body: { slugs }, signal }), staleTime: 300_000, enabled: slugs.length > 0 });
 }
 
-export function useTags() {
-  return useQuery({ queryKey: keys.tags, queryFn: () => api<TagCount[]>('/api/tags'), staleTime: 60_000 });
+export function useGraphNavigation(enabled: boolean) {
+  return useQuery({ queryKey: ['graph', 'navigation'], queryFn: () => api<{ items: IndexEntry[]; counts: Record<string, number> }>('/api/graph-navigation'), staleTime: 30_000, enabled });
+}
+
+export function useTypes(enabled = true) {
+  return useQuery({ queryKey: keys.types, queryFn: () => api<TypeCount[]>('/api/types'), staleTime: 300_000, enabled });
+}
+
+export function useTags(enabled = true) {
+  return useQuery({ queryKey: keys.tags, queryFn: () => api<TagCount[]>('/api/tags'), staleTime: 300_000, enabled });
+}
+
+export function useGraphTags(q: string, enabled = true) {
+  return useQuery({
+    queryKey: ['graph', 'tag-options', q],
+    queryFn: ({ signal }) => api<{ tags: TagCount[]; total: number }>(`/api/graph-tags?${new URLSearchParams({ q })}`, { signal }),
+    staleTime: 30_000,
+    enabled,
+  });
 }
 
 export function useHome() {

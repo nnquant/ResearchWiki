@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { useSearch, useTags, useTypes } from '../api/hooks';
+import { useSearch, useGraphTags, useTypes } from '../api/hooks';
 import { MultiTagFilter, readTagSelection, writeTagSelection } from '../app/MultiTagFilter';
 import { pageUrl } from '../api/client';
 import { useCrumbs } from '../app/UiContext';
@@ -17,7 +17,9 @@ export function SearchPage() {
   const [draft, setDraft] = useState(q);
   useEffect(() => setDraft(q), [q]);
 
-  const { data: tags } = useTags();
+  const [tagQuery, setTagQuery] = useState('');
+  const { data: tagOptions } = useGraphTags(tagQuery);
+  const tags = tagOptions?.tags;
   const { data: types } = useTypes();
   const tagSelection = readTagSelection(params);
   const { data, isLoading, error, isFetching } = useSearch({ q, mode, types: typeFilter, ...tagSelection, cursor: params.get('cursor') ?? undefined, limit: 30 }, q.length > 0);
@@ -52,7 +54,7 @@ export function SearchPage() {
         </div>
         <button className="btn primary" type="submit">检索</button>
       </form>
-      <MultiTagFilter tags={tags ?? []} value={tagSelection} onChange={value => { const next = new URLSearchParams(params); writeTagSelection(next, value); next.delete('cursor'); setParams(next); }} />
+      <MultiTagFilter onSearch={setTagQuery} tags={tags ?? []} value={tagSelection} onChange={value => { const next = new URLSearchParams(params); writeTagSelection(next, value); next.delete('cursor'); setParams(next); }} />
 
       {q && isLoading && <Loading label={mode === 'deep' ? '深度检索中…' : '检索中…'} />}
       {error && <ErrorBlock error={error} title="检索失败" />}

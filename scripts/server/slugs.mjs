@@ -1,8 +1,5 @@
 import fs from 'node:fs/promises';
-import path from 'node:path';
-import { repo } from '../common.mjs';
-
-const schema = JSON.parse(await fs.readFile(path.join(repo, 'config', 'quant-research.schema.json'), 'utf8'));
+const schema = JSON.parse(await fs.readFile(new URL('../../config/quant-research.schema.json', import.meta.url), 'utf8'));
 
 /** type → directory (without trailing slash). Includes the two non-schema types this wiki uses. */
 export const TYPE_DIRS = Object.fromEntries(schema.page_types.map(t => [t.name, t.path_prefixes[0].replace(/\/$/, '')]));

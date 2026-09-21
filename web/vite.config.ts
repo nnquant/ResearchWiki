@@ -1,10 +1,25 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 const backend = 'http://127.0.0.1:8018';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), {
+    name: 'precompressed-assets',
+    async writeBundle(options, bundle) {
+      for (const fileName of Object.keys(bundle)) {
+        if (!/\.(js|css|html|svg|json)$/.test(fileName)) continue;
+        const file = path.join(options.dir ?? 'dist', fileName);
+        const data = await fs.readFile(file);
+        for (const [ext, compress] of [['br', brotliCompressSync], ['gz', gzipSync]] as const) {
+          await fs.writeFile(`${file}.${ext}`, compress(data));
+        }
+      }
+    },
+  }],
   build: {
     outDir: 'dist',
     assetsDir: 'app',
@@ -14,7 +29,6 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules/katex') || id.includes('rehype-katex')) return 'katex';
           if (id.includes('@codemirror') || id.includes('@lezer')) return 'codemirror';
           if (id.includes('node_modules/d3-')) return 'd3';
           if (id.includes('node_modules/react') || id.includes('node_modules/scheduler') || id.includes('@tanstack')) return 'react';

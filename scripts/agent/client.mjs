@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { setTimeout as delay } from 'node:timers/promises';
 export async function connection(options = {}, env = process.env) {
   let baseUrl = options.baseUrl ?? env.RESEARCHWIKI_URL;
   let token = env.RESEARCHWIKI_TOKEN, tokenFile = options.tokenFile ?? env.RESEARCHWIKI_TOKEN_FILE;
@@ -18,8 +19,9 @@ export async function connection(options = {}, env = process.env) {
   return { baseUrl: url.href.replace(/\/$/, ''), token: token.trim() };
 }
 export async function agentRequest(operation, request = {}, { signal, ...options } = {}) {
-  if (!['describe', 'resolve', 'query', 'search', 'read', 'related'].includes(operation)) throw Object.assign(new Error('未知操作'), { code: 'INVALID_ARGUMENT' });
+  if (!['describe', 'resolve', 'query', 'search', 'read', 'related', 'graph'].includes(operation)) throw Object.assign(new Error('未知操作'), { code: 'INVALID_ARGUMENT' });
   const { baseUrl, token } = await connection(options);
+  for (let attempt = 0; attempt < 2; attempt++) {
   const deadline = AbortSignal.timeout((request.timeout_ms ?? 15000) + 3000);
   try {
     const response = await fetch(`${baseUrl}/api/research/${operation}`, { method: 'POST', redirect: 'error',
@@ -28,7 +30,17 @@ export async function agentRequest(operation, request = {}, { signal, ...options
     let result;
     try { result = await response.json(); }
     catch { throw Object.assign(new Error(`服务返回非 JSON 响应（HTTP ${response.status}），请检查服务地址或代理`), { code: 'INVALID_RESPONSE', status: response.status }); }
-    if (!response.ok) throw Object.assign(new Error(result.error ?? '查询失败'), { code: result.code ?? 'REQUEST_FAILED', status: response.status });
+    if (!response.ok) throw Object.assign(new Error(result.error ?? '查询失败'), { code: result.code ?? 'REQUEST_FAILED', status: response.status, retry_after: response.headers.get('retry-after') ?? result.retry_after ?? null });
     return result;
-  } catch (e) { if (!e.code) e.code = ['TimeoutError', 'AbortError'].includes(e.name) ? 'TIMEOUT' : 'SERVICE_UNAVAILABLE'; throw e; }
+  } catch (e) {
+    if (['TimeoutError', 'AbortError'].includes(e.name)) e = Object.assign(new Error(e.message), { name: e.name, code: 'TIMEOUT', cause: e });
+    else if (!e.code) e.code = 'SERVICE_UNAVAILABLE';
+    if (attempt || signal?.aborted || !([429, 503, 504].includes(e.status) || e.code === 'TIMEOUT')) throw e;
+    const retrySeconds = e.retry_after == null ? NaN : Number(e.retry_after);
+    const retryMs = Number.isFinite(retrySeconds) ? retrySeconds * 1000 : Date.parse(e.retry_after) - Date.now();
+    if (retryMs > 30000) throw e;
+    const backoff = 300 * 2 ** attempt + Math.floor(Math.random() * 200);
+    await delay(Math.max(backoff, Number.isFinite(retryMs) ? Math.max(0, retryMs) : 0), undefined, { signal });
+  }
+  }
 }
