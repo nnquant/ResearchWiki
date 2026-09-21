@@ -1,5 +1,6 @@
 name: Verify research wiki
 on:
+  workflow_dispatch:
   push:
     branches: [main, investment]
   pull_request:
@@ -15,5 +16,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: Copy-Item config.example.json config.json
-      - run: node --test --test-concurrency=1 tests/*.test.mjs
       - run: npm run build
+      - run: node --test --test-concurrency=1 tests/*.test.mjs
