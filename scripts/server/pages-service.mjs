@@ -8,7 +8,7 @@ import { HttpError } from './errors.mjs';
 import { articleMetadataOf } from '../article-metadata.mjs';
 import { researchMetadata, isReviewDue } from '../research-schema.mjs';
 import { articleCategory } from '../article-category.mjs';
-import { withEntityTags } from '../article-entities.mjs';
+import { withEntityTags, facetTags } from '../article-entities.mjs';
 import { matchesTags } from '../query/contract.mjs';
 import { readGraphHeader } from './graph-inventory.mjs';
 
@@ -30,10 +30,12 @@ async function safeDb(fn, fallback) {
 const metaCache = new Map();
 const metaFile = dataPath('state', 'page-meta-cache.json');
 let loadedMeta;
+// Bump when the cached meta shape changes so stale entries are rebuilt from frontmatter.
+const META_VERSION = 2;
 let metaRevision = 0, persistedRevision = 0, fileIndexPending, fileIndexSnapshot;
 function loadMeta() {
   return loadedMeta ??= readJson(metaFile, null).then(saved => {
-    if (saved?.version === 1) for (const [slug, item] of saved.entries) metaCache.set(slug, item);
+    if (saved?.version === META_VERSION) for (const [slug, item] of saved.entries) metaCache.set(slug, item);
   }).catch(() => {});
 }
 
@@ -51,6 +53,7 @@ async function pageMeta(entry) {
     type,
     category: articleCategory(frontmatter, type),
     tags: withEntityTags(frontmatter).tags,
+    facet_tags: facetTags(frontmatter),
     aliases: Array.isArray(frontmatter.aliases) ? frontmatter.aliases.map(String) : [],
     review_status: typeof frontmatter.review_status === 'string' ? frontmatter.review_status : null,
     research: researchMetadata(frontmatter),
@@ -76,7 +79,7 @@ export async function getFileIndex() {
     }));
     if (metaRevision !== persistedRevision) {
       persistedRevision = metaRevision;
-      void atomicJson(metaFile, { version: 1, entries: [...metaCache] }).catch(() => { persistedRevision = -1; });
+      void atomicJson(metaFile, { version: META_VERSION, entries: [...metaCache] }).catch(() => { persistedRevision = -1; });
     }
     if (fileIndexSnapshot?.revision !== metaRevision) {
       fileIndexSnapshot = { revision: metaRevision, items: entries.map(entry => metaCache.get(entry.slug).meta) };
@@ -136,6 +139,7 @@ async function buildPageIndex(files) {
         category: meta.category,
         review_status: meta.review_status,
         tags: meta.tags,
+        facet_tags: meta.facet_tags,
         aliases: meta.aliases,
         research: meta.research,
         updated_at: row.updated_at,
@@ -167,7 +171,7 @@ export async function getScopedIndex(slugs) {
       const { frontmatter: fm, title } = await readGraphHeader(entry.file);
       const type = typeof fm.type === 'string' ? fm.type : typeForSlug(entry.slug) ?? 'note';
       out.push({ slug: entry.slug, title: fm.title || title || entry.slug, type,
-        category: articleCategory(fm, type), tags: withEntityTags(fm).tags,
+        category: articleCategory(fm, type), tags: withEntityTags(fm).tags, facet_tags: facetTags(fm),
         aliases: Array.isArray(fm.aliases) ? fm.aliases.map(String) : [],
         review_status: fm.review_status ?? null, research: researchMetadata(fm),
         excerpt: excerptOf('', fm.summary || fm.abstract),
@@ -182,8 +186,9 @@ export async function getScopedIndex(slugs) {
 export function filterPageIndex(index, filters) {
   let items = index;
   if (filters.type?.length) items = items.filter(x => filters.type.includes(x.category ?? x.type));
-  if (filters.tag) items = items.filter(x => x.tags.includes(filters.tag));
-  items = items.filter(x => matchesTags(x.tags, filters));
+  const allTags = x => x.facet_tags?.length ? [...x.tags, ...x.facet_tags] : x.tags;
+  if (filters.tag) items = items.filter(x => allTags(x).includes(filters.tag));
+  items = items.filter(x => matchesTags(allTags(x), filters));
   if (filters.status) items = items.filter(x => x.review_status === filters.status);
   if (filters.stage) items = items.filter(x => x.research?.research_stage === filters.stage);
   if (filters.due) items = items.filter(x => isReviewDue(x));
@@ -191,7 +196,7 @@ export function filterPageIndex(index, filters) {
     const q = filters.q.toLowerCase();
     items = items.filter(x => (filters.lookup
       ? [x.title, x.slug, ...(x.aliases ?? []), ...(x.research?.tickers ?? [])]
-      : [x.title, x.slug, ...(x.tags ?? []), ...(x.aliases ?? []), ...(x.research?.tickers ?? []), x.research?.region ?? '']).some(value => String(value).toLowerCase().includes(q)));
+      : [x.title, x.slug, ...(x.tags ?? []), ...(x.facet_tags ?? []), ...(x.aliases ?? []), ...(x.research?.tickers ?? []), x.research?.region ?? '']).some(value => String(value).toLowerCase().includes(q)));
   }
   const key = { updated: 'updated_at', created: 'created_at', title: 'title', type: 'type', slug: 'slug' }[filters.sort] ?? 'updated_at';
   const direction = filters.dir === 'asc' ? 1 : -1;

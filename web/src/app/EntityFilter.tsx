@@ -1,21 +1,13 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
-import { api } from '../api/client';
 import { ErrorBlock } from './ui';
-
-interface EntityCandidate { entity_id: string; name: string; entity_type: string; status: 'curated' | 'observed'; document_count: number; aliases: string[] }
+import { ENTITY_TYPE_LABELS, entityStatusLabel, useEntityResolve, type EntityCandidate } from './library/useEntityResolve';
 
 /** Shared entity resolution for graph, library and search. Never auto-select ambiguous matches. */
 export function EntityFilter() {
   const [params, setParams] = useSearchParams();
   const [draft, setDraft] = useState(''), [query, setQuery] = useState('');
-  const { data, error, isFetching } = useQuery({
-    queryKey: ['entity-resolve', query], enabled: Boolean(query), staleTime: 30_000,
-    queryFn: ({ signal }) => api<{ results: EntityCandidate[]; ambiguous: boolean; next_cursor: string | null }>('/api/research/resolve', {
-      method: 'POST', signal, body: { kind: 'entity', q: query, limit: 20 },
-    }),
-  });
+  const { data, error, isFetching } = useEntityResolve(query);
   const choose = (entity?: EntityCandidate) => {
     const next = new URLSearchParams(params); next.delete('page'); next.delete('cursor');
     if (entity) { next.set('entity_id', entity.entity_id); next.set('entity_label', entity.name); }
@@ -34,7 +26,7 @@ export function EntityFilter() {
       {data.ambiguous && <p className="small muted">找到多个候选，请选择具体对象。</p>}
       <div className="graph-materials">{data.results.map(entity => <button key={entity.entity_id} onClick={() => choose(entity)}>
         <span>{entity.name} · {entity.document_count.toLocaleString()} 份材料</span>
-        <span className="small muted">{({ company: '公司', security: '证券', industry: '行业', subfield: '领域', topic: '主题' } as Record<string, string>)[entity.entity_type]} · {entity.status === 'curated' ? '已配置别名映射' : '原始名称，身份待核验'}</span>
+        <span className="small muted">{ENTITY_TYPE_LABELS[entity.entity_type]} · {entityStatusLabel(entity)}</span>
       </button>)}</div>
       {!data.results.length && <p className="small muted">没有匹配实体，可改用原始标签筛选。</p>}
       {data.next_cursor && <p className="small muted">当前展示前 20 项，请补充名称缩小范围。</p>}

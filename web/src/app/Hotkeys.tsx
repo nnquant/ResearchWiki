@@ -65,6 +65,7 @@ export function HelpDialog() {
         <div><span>当前页图谱</span><span>g g</span></div>
         <div><span>收起 / 展开侧栏</span><span>[</span></div>
         <div><span>列表中上下移动</span><span>j k</span></div>
+        <div><span>资料库：聚焦搜索</span><span>f</span></div>
         <div><span>关闭浮层</span><span>Esc</span></div>
       </div>
       <div className="dialog-actions"><button className="btn" onClick={() => setHelpOpen(false)}>关闭</button></div>

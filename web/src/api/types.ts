@@ -24,6 +24,15 @@ export interface TypeCount {
 export interface TagCount {
   tag: string;
   n: number;
+  /** Display name from the report dictionaries, e.g. 高盛 for 机构:GoldmanSachs. */
+  label?: string;
+}
+
+export interface TagOptions {
+  tags: TagCount[];
+  total: number;
+  /** Tag-prefix counts over the whole library, independent of the query. */
+  groups: { name: string; n: number }[];
 }
 
 export interface LinkRef {
@@ -237,7 +246,7 @@ export interface Status {
   model: string;
   active: Job | null;
   queue: number;
-  services: { postgres: ServiceHealth; mcp: ServiceHealth; ollama: ServiceHealth };
+  services: { postgres: ServiceHealth; ollama: ServiceHealth };
   counts: { files: number; documents: number; indexed: number; failed: number; pdf_pages: number };
   last_index_at: string | null;
 }
@@ -246,13 +255,18 @@ export interface Stats {
   files: number;
   database: {
     pages: number;
-    chunks: { total: number; embedded: number };
+    chunks: { total: number | null; embedded: number | null; estimated: boolean };
     dims: number[];
+    dims_sampled: boolean;
+    checked_at: string;
     links: { link_type: string; n: number }[];
     tags: number;
     by_type: { type: string; n: number }[];
   } | null;
   database_error: string | null;
+  documents_total: number;
+  documents_offset: number;
+  documents_limit: number;
   documents: {
     title: string; source_kind: string; status: string; pages?: number; characters?: number; parser?: string; error: string | null; wiki_slug?: string;
   }[];

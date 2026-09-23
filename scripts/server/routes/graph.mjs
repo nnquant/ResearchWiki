@@ -19,7 +19,7 @@ export function registerGraphRoutes(router) {
     }
     return { items: [...groups.values()].flatMap(g => g.items), counts: Object.fromEntries([...groups].map(([type, g]) => [type, g.count])) };
   });
-  router.route('GET', '/api/graph-tags', async ({ url }) => graphTagOptions((await getFileIndex()).items, url.searchParams.get('q') ?? ''));
+  router.route('GET', '/api/graph-tags', async ({ url }) => graphTagOptions((await getFileIndex()).items, url.searchParams.get('q') ?? '', { facets: url.searchParams.get('facets') === '1' }));
   router.route('GET', '/api/graph', async ({ url }) => {
     const p = url.searchParams;
     const limit = Number(p.get('limit') ?? 80);

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { api, loadStatus, refreshStatus, encodeSlug } from './client';
 import type {
-  Status, IndexEntry, TypeCount, TagCount, Page, PageSummary, RawPage, SearchResponse, PageList, Graph, Job, Stats, Template, HomeData,
+  Status, IndexEntry, TypeCount, TagCount, TagOptions, Page, PageSummary, RawPage, SearchResponse, PageList, Graph, Job, Stats, Template, HomeData,
 } from './types';
 
 export const keys = {
@@ -169,6 +169,17 @@ export function useGraphTags(q: string, enabled = true) {
   });
 }
 
+/** Library tag options, including report facets (机构/作者/主题) matched by dictionary aliases. */
+export function useTagOptions(q: string, enabled = true) {
+  return useQuery({
+    queryKey: ['library', 'tag-options', q],
+    queryFn: ({ signal }) => api<TagOptions>(`/api/graph-tags?${new URLSearchParams({ q, facets: '1' })}`, { signal }),
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
+    enabled,
+  });
+}
+
 export function useJobs(active: boolean) {
   return useQuery({
     queryKey: keys.jobs,
@@ -178,8 +189,10 @@ export function useJobs(active: boolean) {
   });
 }
 
-export function useStats() {
-  return useQuery({ queryKey: keys.stats, queryFn: () => api<Stats>('/api/stats'), staleTime: 10_000 });
+export function useStats(offset = 0) {
+  return useQuery({ queryKey: [...keys.stats, offset],
+    queryFn: ({ signal }) => api<Stats>(`/api/stats?offset=${offset}&limit=50`, { signal: AbortSignal.any([signal, AbortSignal.timeout(12000)]) }),
+    staleTime: 60_000, retry: false, placeholderData: keepPreviousData });
 }
 
 export function useTemplates() {
