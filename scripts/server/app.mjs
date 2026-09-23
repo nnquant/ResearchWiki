@@ -17,7 +17,7 @@ import { serveStatic, warmStatic } from './routes/static.mjs';
 import { startEmbeddingWarmer } from './search-service.mjs';
 import { registerResearchRoutes, isAgentReadRequest } from './routes/research.mjs';
 import { startQueryRefresh } from '../query/refresh.mjs';
-import { listenAgent } from '../agent/http.mjs';
+import { listenAgent, createAgentGateway } from '../agent/http.mjs';
 import { registerEntityGovernanceRoutes } from './routes/entity-governance.mjs';
 
 const compress = promisify(gzip);
@@ -42,6 +42,7 @@ function errorStatus(error) {
 
 export function createApp() {
   void warmStatic();
+  const agentGateway = createAgentGateway();
   const router = createRouter();
   registerStatusRoutes(router);
   registerPageRoutes(router);
@@ -56,6 +57,8 @@ export function createApp() {
   const server = http.createServer(async (req, res) => {
     securityHeaders(res);
     try {
+      const pathname = new URL(req.url, 'http://localhost').pathname;
+      if (agentGateway && (pathname === '/agent' || pathname.startsWith('/agent/'))) return await agentGateway(req, res);
       assertHost(req);
       const url = new URL(req.url, `http://127.0.0.1:${config.port}`);
       assertOrigin(req);

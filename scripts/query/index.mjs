@@ -12,9 +12,10 @@ import { FIELDS, tokenText } from './contract.mjs';
 import { fileURLToPath } from 'node:url';
 import { refreshGraphIndex, graphEnabled } from './graph-hooks.mjs';
 import { indexLexicalDocument } from './lexical-index.mjs';
+import {CLEANUP_VERSION,SOURCE_BODY_BOUNDARY} from '../wiki-ad-cleanup.mjs';
 
 // Virtual graph fields must not force a full-text reindex or change immutable revisions.
-const INDEX_VERSION = hash(JSON.stringify(['rq-index-2', Object.fromEntries(Object.entries(queryProfile).filter(([key]) => key !== 'graphAdapter')), Object.fromEntries(Object.entries(FIELDS).filter(([key]) => key !== 'entity_ids'))]));
+const INDEX_VERSION = hash(JSON.stringify(['rq-index-2', Object.fromEntries(Object.entries(queryProfile).filter(([key]) => key !== 'graphAdapter')), Object.fromEntries(Object.entries(FIELDS).filter(([key]) => !['entity_ids','topic_primary'].includes(key)))]));
 export async function safeFile(relative) {
   if (!relative || typeof relative !== 'string') return null;
   const candidate = path.resolve(root, relative);
@@ -79,8 +80,21 @@ export function cleanDatabaseValue(value) {
   return value;
 }
 
+/** A reviewed Wiki cleanup is a derivative; PDF labels still identify original pages. */
+export function cleanedWikiBody(fm, wikiBody) {
+  if(fm.wiki_ad_cleanup?.version !== CLEANUP_VERSION)return null;
+  if(fm.wiki_ad_cleanup.content_scope==='source-markdown') {
+    const boundary=wikiBody.match(new RegExp('^'+SOURCE_BODY_BOUNDARY.trimEnd()+'\r?\n','m'));
+    if(!boundary)throw new Error('已清理 Wiki 缺少正文边界，拒绝回退到含广告的原解析文件');
+    return wikiBody.slice(boundary.index+boundary[0].length);
+  }
+  const start=wikiBody.search(/^## PDF 第 \d+ 页\r?$/m);
+  return start<0?'':wikiBody.slice(start);
+}
+
 /** Separate, resumable text projection. No LLM, embedding, or source-file mutation. */
-export async function buildIndex({ progress = () => {}, force = false } = {}) {
+export async function buildIndex({ progress = () => {}, force = false, concurrency = 1 } = {}) {
+  if(!Number.isInteger(concurrency)||concurrency<1||concurrency>4)throw new Error('索引并发必须为 1–4');
   const sql = await getIndexSql();
   await sql.unsafe(await fs.readFile(new URL('./schema.sql', import.meta.url), 'utf8'));
   const lease = await sql.reserve();
@@ -107,12 +121,14 @@ export async function buildIndex({ progress = () => {}, force = false } = {}) {
       items.push({ doc: {}, slug, wiki, source_key: `wiki:${identity.dev}:${identity.ino}` });
     }
     const seen = [];
-    for (const item of items) {
+    let cursor=0,fatal=null;
+    async function worker(){while(cursor<items.length&&!fatal){
+      const item=items[cursor++];
       const { doc, slug, wiki, source_key } = item;
       const old = previous.get(source_key) ?? (!doc.id ? priorWikiSlugs.get(slug) : null), id = old?.document_id ?? (doc.id ? `doc:${doc.id}` : `wiki:${randomUUID()}`);
       seen.push(id); stats.seen++;
       try {
-        const source = doc.id ? (await safeFile(doc.paged_path) ?? await safeFile(doc.parsed_path) ?? wiki) : wiki;
+        let source = doc.id ? (await safeFile(doc.paged_path) ?? await safeFile(doc.parsed_path) ?? wiki) : wiki;
         const signature = hash(JSON.stringify({ version: INDEX_VERSION, doc, wiki, source }));
         if (!force && old?.signature === signature) {
           if (old.source_key !== source_key) await lease`UPDATE research_query.documents SET source_key=${source_key} WHERE document_id=${id}`;
@@ -120,8 +136,10 @@ export async function buildIndex({ progress = () => {}, force = false } = {}) {
         }
         const wikiText = wiki ? await fs.readFile(wiki.file, 'utf8') : '';
         let fm = {}, wikiBody = wikiText, metadataError = null;
-        try { const parsed = matter(wikiText); fm = parsed.data; wikiBody = parsed.content; } catch (e) { metadataError = e.message; }
-        const body = cleanDatabaseValue(source ? (source === wiki ? wikiBody : await fs.readFile(source.file, 'utf8')) : '');
+        try { const parsed = matter(wikiText, {}); fm = parsed.data; wikiBody = parsed.content; } catch (e) { metadataError = e.message; }
+        const cleanBody=doc.id&&wiki?cleanedWikiBody(fm,wikiBody):null;
+        if(cleanBody!==null)source=wiki;
+        const body = cleanDatabaseValue(cleanBody ?? (source ? (source === wiki ? wikiBody : await fs.readFile(source.file, 'utf8')) : ''));
         // A concurrent writer cannot publish a mismatched fingerprint/body pair.
         for (const info of [wiki, source].filter(Boolean)) {
           const fresh = await fs.stat(info.file);
@@ -133,7 +151,8 @@ export async function buildIndex({ progress = () => {}, force = false } = {}) {
         const title = cleanDatabaseValue(fm.title || doc.title || slug);
         const provenance = cleanDatabaseValue({ raw_path: fm.raw_path ?? doc.raw_path ?? null, parsed_path: source?.relative ?? null, source_url: fm.source_url ?? doc.source_url ?? null,
           sha256: doc.sha256 ?? fm.sha256 ?? null, parser: doc.parser ?? null, content_kind: doc.id ? 'source' : fm.translation_of ? 'translation' : 'research_page',
-          published_at_source: metadata.published_at ? 'recorded_metadata' : 'unknown', tag_provenance: 'unknown' });
+          published_at_source: metadata.published_at ? 'recorded_metadata' : 'unknown', tag_provenance: 'unknown',
+          ...(cleanBody!==null?{content_cleanup:fm.wiki_ad_cleanup,original_parsed_path:doc.paged_path??doc.parsed_path??null}:{}) });
         const revision = hash(JSON.stringify({ body, metadata, provenance, title }));
         const blocks = makeBlocks(body, revision);
         const family = cleanDatabaseValue(String(doc.sha256 ?? fm.translation_of ?? id));
@@ -160,7 +179,10 @@ export async function buildIndex({ progress = () => {}, force = false } = {}) {
         if (stats.errors.length < 50) stats.errors.push({ document_id: id, code: e.code ?? 'INDEX_ERROR', message: e.message });
       }
       if (stats.seen % 100 === 0) progress({ ...stats, errors: undefined });
-    }
+    }}
+    // Drain every in-flight transaction before releasing the global index lease.
+    await Promise.all(Array.from({length:Math.min(concurrency,items.length)},()=>worker().catch(e=>{fatal??=e;})));
+    if(fatal)throw fatal;
     await sql.begin(async tx => {
       await tx`UPDATE research_query.documents SET deleted=true WHERE NOT (document_id=ANY(${seen}::text[]))`;
       await tx`UPDATE research_query.documents t SET family_id=o.family_id FROM research_query.documents o

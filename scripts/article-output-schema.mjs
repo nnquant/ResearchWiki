@@ -4,7 +4,7 @@ import {ENTITY_FIELDS} from './article-entities.mjs';
 
 export const OUTPUT_SCHEMA_VERSION='article-output-schema-v1';
 const object=properties=>({type:'object',additionalProperties:false,required:Object.keys(properties),properties});
-const normalFields=Object.keys(articleSchema.properties).filter(k=>!['personal_rating','review_status'].includes(k));
+const normalFields=Object.keys(articleSchema.properties).filter(k=>!['personal_rating','review_status','topic_primary'].includes(k));
 const ajv=new Ajv({strict:false,validateFormats:false,allErrors:false});
 const compiled=new Map();
 // Optional values retain their nullable types; property names and nesting are fixed.

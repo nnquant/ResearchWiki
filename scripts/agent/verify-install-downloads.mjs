@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { repo } from '../common.mjs';
+import { renderInstallDownload } from './install-downloads.mjs';
 
 const baseUrl = process.argv[2]?.replace(/\/$/, '');
 if (!baseUrl) throw new Error('请提供 Agent 服务地址');
@@ -19,7 +20,7 @@ for (const [name, original] of [['researchwiki-install.md', 'ResearchWiki-一键
   assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store');
   const bytes = Buffer.from(await response.arrayBuffer());
   hashes[name] = hash(bytes);
-  assert.equal(hashes[name], hash(await fs.readFile(path.join(directory, original))), '下载内容应与发布文件完全一致');
+  assert.equal(hashes[name], hash(renderInstallDownload(await fs.readFile(path.join(directory, original)), { baseUrl, defaultBaseUrl: share.base_url })), '下载内容应与当前入口渲染的发布文件一致');
   await fs.writeFile(path.join(work, name), bytes);
   checks.push(`${name}:download_matches_published_file`);
 }
@@ -31,6 +32,7 @@ const installed = spawnSync(process.execPath, [path.join(work, 'researchwiki-ins
   { windowsHide: true, encoding: 'utf8', timeout: 30000 });
 assert.equal(installed.status, 0, '下载的安装器必须成功执行并通过实库连接验证');
 assert.ok(installed.stdout.includes('连接验证通过'));
+assert.equal(JSON.parse(await fs.readFile(path.join(work, 'research-wiki/connection.json'), 'utf8')).base_url, baseUrl);
 checks.push('downloaded_installer_connects_to_live_knowledge_base');
 const report = { ok: true, base_url: baseUrl, checked_at: new Date().toISOString(), checks, sha256: hashes };
 await fs.writeFile(path.join(repo, 'outputs/install-download-verification.json'), JSON.stringify(report, null, 2));

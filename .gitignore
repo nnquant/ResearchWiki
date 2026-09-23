@@ -38,3 +38,6 @@ __pycache__/
 /docs/entity-governance-results-*.md
 /docs/entity-six-improvements-results-*.md
 /docs/tag-audit-*.md
+
+# Corpus-derived report naming dictionary (analyst names and PDF evidence) stays local
+/config/report-dictionaries.json

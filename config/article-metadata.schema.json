@@ -15,6 +15,7 @@
     "markets": { "title": "市场", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
     "companies": { "title": "涉及公司", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
     "industries": { "title": "涉及行业", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
+    "topic_primary": { "title": "研报主题", "type": ["string", "null"], "enum": [null, "Semis", "Tech-Hardware", "Internet", "Software", "Telecom-Media", "Macro", "Rates-Credit", "FX", "Energy", "Metals-Mining", "Chemicals-Industrials", "Financials", "Cross-Asset", "Other"] },
     "subfields": { "title": "细分领域", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },
     "analyst_expectations": { "title": "分析师预期", "type": ["array", "null"], "items": { "$ref": "#/$defs/expectation" }, "maxItems": 10 },
     "research_topics": { "title": "研究主题", "type": ["array", "null"], "items": { "type": "string" }, "maxItems": 100 },

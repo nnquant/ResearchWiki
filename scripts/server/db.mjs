@@ -9,8 +9,8 @@ function getPool(role) {
   if (!pools.has(role)) {
     const opening = fs.readFile(dataPath('runtime', '.gbrain', 'config.json'), 'utf8').then(contents => {
       const brain = JSON.parse(contents);
-      return postgres(brain.database_url, { max: 4, idle_timeout: 120, connect_timeout: 5,
-        connection: { application_name: `researchwiki-${role}` }, onnotice: () => {} });
+      return postgres(brain.database_url, { max: role === 'status' ? 1 : 4, idle_timeout: 120, connect_timeout: 5,
+        connection: { application_name: `researchwiki-${role}`, ...(role === 'status' ? { statement_timeout: 3000 } : {}) }, onnotice: () => {} });
     }).catch(error => { pools.delete(role); throw error; });
     pools.set(role, opening);
   }
@@ -218,19 +218,45 @@ export async function unreadPages(limit = 8) {
     ORDER BY updated_at DESC LIMIT $1`, [limit]);
 }
 
+let statsCached, statsPending, statsFailure, statsRetryAt = 0;
 export async function stats() {
-  const s = await getSql();
-  const [pages] = await s.unsafe(`SELECT count(*)::int AS n FROM pages WHERE deleted_at IS NULL`);
-  const [chunks] = await s.unsafe(`SELECT count(*)::int AS total, count(embedding)::int AS embedded FROM content_chunks`);
-  const dims = await s.unsafe(`SELECT DISTINCT vector_dims(embedding) AS dims FROM content_chunks WHERE embedding IS NOT NULL`);
-  const links = await s.unsafe(`SELECT link_type, count(*)::int AS n FROM links GROUP BY link_type ORDER BY n DESC`);
-  const [tags] = await s.unsafe(`SELECT count(DISTINCT tag)::int AS n FROM tags`);
-  return {
-    pages: pages.n,
-    chunks: { total: chunks.total, embedded: chunks.embedded },
-    dims: dims.map(d => d.dims),
-    links,
-    tags: tags.n,
-    by_type: await typeCounts(),
-  };
+  if (statsCached && Date.now() - statsCached.at < 60000) return statsCached.value;
+  if (statsFailure && Date.now() < statsRetryAt) throw statsFailure;
+  return statsPending ??= collectStats().then(value => {
+    statsCached = { at: Date.now(), value }; statsFailure = null; return value;
+  }).catch(error => {
+    statsFailure = error; statsRetryAt = Date.now() + 5000; throw error;
+  }).finally(() => { statsPending = null; });
+}
+
+async function collectStats() {
+  // A separate single connection keeps status aggregation out of interactive
+  // page reads. All SQL shares a three-second budget and is cancelled by PG.
+  const s = await getPool('status');
+  return s.begin('read only', async tx => {
+    const deadline = Date.now() + 3000;
+    const run = async query => {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new Error('统计查询超时，请稍后重试');
+      await tx`SELECT set_config('statement_timeout', ${String(remaining)}, true)`;
+      return tx.unsafe(query);
+    };
+    const by_type = await run(`SELECT type,count(*)::int AS n FROM pages WHERE deleted_at IS NULL GROUP BY type ORDER BY n DESC`);
+    // Even count(*) can touch a million heap rows after embedding updates.
+    // Use PostgreSQL's table estimate; missing vectors use the existing small
+    // partial index. Mark this approximation explicitly in the response/UI.
+    const [chunkCounts] = await run(`SELECT CASE WHEN reltuples < 0 THEN NULL ELSE round(reltuples)::bigint END AS total,
+      (SELECT count(*)::int FROM content_chunks WHERE embedding IS NULL) AS missing
+      FROM pg_class WHERE oid='public.content_chunks'::regclass`);
+    const total = chunkCounts.total === null ? null : Math.max(Number(chunkCounts.total), chunkCounts.missing);
+    const chunks = { total, embedded: total === null ? null : total - chunkCounts.missing, estimated: true };
+    // Inspect only 32 vectors: DISTINCT over the entire vector column detoasts
+    // the whole corpus and can spend minutes in disk IO.
+    const dims = await run(`SELECT DISTINCT vector_dims(embedding) AS dims FROM (SELECT embedding FROM content_chunks WHERE embedding IS NOT NULL LIMIT 32) sample ORDER BY dims`);
+    const links = await run(`SELECT link_type,count(*)::int AS n FROM links GROUP BY link_type ORDER BY n DESC`);
+    const [tags] = await run(`SELECT count(DISTINCT tag)::int AS n FROM tags`);
+    return { pages: by_type.reduce((n,row) => n + row.n, 0), chunks,
+      dims: dims.map(d => d.dims), dims_sampled: true, links, tags: tags.n, by_type,
+      checked_at: new Date().toISOString() };
+  });
 }

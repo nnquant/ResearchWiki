@@ -16,13 +16,33 @@ ResearchWiki 提供共享的条件查询、正文检索和版本化阅读服务�
 | stdio MCP 桥 | 同样的 URL/token 环境变量 | 轻量客户端和 MCP SDK |
 | Skill | `skills/research-wiki/SKILL.md` | 已配置上述任一连接；Skill 本身不是传输协议 |
 
-`8020` 是独立的研究只读服务，与 Wiki `8018`、内部 GBrain `3131` 区分。它在同一个 Wiki 进程中启动、停止，共享查询索引和游标；提供六个研究操作、`/mcp`、带鉴权的 `/health` 和 `/assets/`，以及维护者显式发布的安装资源。不会注册 Wiki 状态、编辑、导入或管理接口。除下述分享链接外均校验 Bearer，CSRF token 不能代替身份认证。
+`8020` 是独立的研究只读服务，与 Wiki `8018`、内部 GBrain `3131` 区分。它在同一个 Wiki 进程中启动、停止，共享查询索引和游标；提供七个研究操作、`/mcp`、带鉴权的 `/health` 和 `/assets/`，以及维护者显式发布的安装资源。不会注册 Wiki 状态、编辑、导入或管理接口。除下述分享链接外均校验 Bearer，CSRF token 不能代替身份认证。
+
+Wiki `8018` 同时在 `/agent/` 下挂载相同的只读服务。公网反向代理已经映射到 Wiki 时，无需再开放 8020。以 `http://gateway.example.com:10001` 为例：
+
+| 用途 | 地址 |
+| --- | --- |
+| Agent 基础地址 | `http://gateway.example.com:10001/agent` |
+| HTTP API | `POST http://gateway.example.com:10001/agent/api/research/<操作>` |
+| 网络 MCP | `http://gateway.example.com:10001/agent/mcp` |
+| 安装资源 | `http://gateway.example.com:10001/agent/install/<分享码>/researchwiki-install.md`（或 `.mjs`） |
+
+`/agent` 使用同一 Bearer 只读凭据和 Host/Origin 检查，只注册上述研究服务；Wiki 根路径沿用现有鉴权规则。
 
 ### 分享链接安装
 
 维护者运行 `npm run research:share -- http://服务器:8020`，生成含当前 token 的安装 Markdown 和自包含 Node.js 脚本，发布到 `/install/<随机分享码>/researchwiki-install.md` 和同目录的 `researchwiki-install.mjs`。将命令输出的文档链接和“按文档安装并验证连接”转发给 Agent 即可，无需提供仓库或附件。
 
-这两个地址无需 Bearer，分享链接本身授予获取只读凭据的能力，接收方仍需有内网访问权限。服务只提供这两个明确的文件，不列目录、不开放 outputs/private 中的其他内容；响应禁用缓存和索引。未发布时下载入口不可用。再次发布复用分享码并更新安装内容；将 `outputs/private/install-share.json` 中的 enabled 改为 false 即停止下载，无需重启。若需撤销已经下载安装的客户端，应另行更换读 token，仅停用下载链接不会撤销已分发凭据。
+这两个地址无需 Bearer，分享链接本身授予获取只读凭据的能力，接收方需要能够访问链接对应的公网或内网服务。服务只提供这两个明确的文件，不列目录、不开放 outputs/private 中的其他内容；响应禁用缓存和索引。未发布时下载入口不可用。再次发布复用分享码并更新安装内容；将 `outputs/private/install-share.json` 中的 enabled 改为 false 即停止下载，无需重启。若需撤销已经下载安装的客户端，应另行更换读 token，仅停用下载链接不会撤销已分发凭据。
+
+下载时，文档链接和安装脚本自动写入当前入口的基础地址，公网与内网可复用同一份发布产物。代理改写 Host 时，需配置下文的规范地址。离线转发或切换入口时，可显式指定地址；`--target` 仍可组合使用：
+
+```powershell
+node researchwiki-install.mjs --base-url http://gateway.example.com:10001/agent
+node researchwiki-install.mjs --from-url http://gateway.example.com:10001/agent/install/<分享码>/researchwiki-install.mjs
+```
+
+地址优先级为 `--base-url`、`--from-url`、下载入口注入地址、发布时默认地址。已安装的客户端也可修改 `connection.json`，或用 `RESEARCHWIKI_URL` 临时覆盖。发布命令不传地址时优先采用 `agent.gatewayBaseUrl`，其次采用 `agent.publicBaseUrl`。
 
 服务端 `config.json` 可配置：
 
@@ -33,6 +53,7 @@ ResearchWiki 提供共享的条件查询、正文检索和版本化阅读服务�
     "host": "0.0.0.0",
     "port": 8020,
     "publicBaseUrl": "",
+    "gatewayBaseUrl": "http://gateway.example.com:10001/agent",
     "wikiBaseUrl": "",
     "maxConcurrent": 4
   }
@@ -41,7 +62,9 @@ ResearchWiki 提供共享的条件查询、正文检索和版本化阅读服务�
 
 未配置 agent 时默认启用，host 继承 Wiki host，port 为 Wiki port + 2。`publicBaseUrl` 留空时根据已验证的 Host 生成原件绝对地址；HTTPS 反向代理或 URL 前缀部署时填写 Agent 的完整对外地址，如 `https://kb.example.com/research`，代理剥离此前缀并转发到 8020。只信任此配置，不采信客户端传来的 X-Forwarded-Host。`wikiBaseUrl` 仅在网页阅读器也有可达地址时填写，否则远程响应的 `open_url=null`，Agent 通过 `research_read` 阅读。`raw_url` 始终指向 Agent 服务，下载时仍需带 Bearer；不要把 token 放入 URL。
 
-将此端口放在 Tailscale 等受控内网中，或使用 HTTPS 反向代理传输凭据。对外代理只映射 8020 的研究服务即可。当前使用一个共享只读 token（服务端 `dataRoot/runtime/mcp-read-token`，沿用现有接入凭据），由管理员通过私密渠道提供给授权 Agent；所有持有人可读取整个知识库，尚未实现逐 Agent 的配额、撤销或按文档 ACL。替换 token 文件可立即使旧凭据失效；不要分发服务端 config.json、数据库凭据或整个 runtime 目录。
+`gatewayBaseUrl` 专用于 Wiki 的 `/agent` 入口，设置为完整公网地址且以 `/agent` 结尾。它支持代理改写 Host，以及如 `https://kb.example.com/wiki/agent` 的外层前缀（代理需剥离 `/wiki`）。未设置时使用已验证的请求 Host。此入口默认将规范地址去掉 `/agent` 作为网页阅读地址。`publicBaseUrl` 仅控制独立 8020 入口，两者可同时支持公网和内网；不信任请求中的 X-Forwarded-Host。
+
+将服务放在 Tailscale 等受控内网中，或使用 HTTPS 反向代理传输凭据；HTTP 公网连接会明文传输凭据及材料。代理可映射独立 8020 服务，或现有 Wiki 的 `/agent/` 路径。当前使用一个共享只读 token（服务端 `dataRoot/runtime/mcp-read-token`，沿用现有接入凭据），由管理员通过私密渠道提供给授权 Agent；所有持有人可读取整个知识库，尚未实现逐 Agent 的配额、撤销或按文档 ACL。替换 token 文件可立即使旧凭据失效；不要分发服务端 config.json、数据库凭据或整个 runtime 目录。
 
 ### 轻量客户端
 

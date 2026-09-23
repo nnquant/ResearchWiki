@@ -3,6 +3,7 @@
   "tickers": "array",
   "companies": "array",
   "industries": "array",
+  "topic_primary": "string",
   "subfields": "array",
   "institutions": "array",
   "authors": "array",

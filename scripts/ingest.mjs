@@ -12,6 +12,9 @@ import { withEntityTags } from './article-entities.mjs';
 import {isCompanyReport} from './analyst-expectations.mjs';
 import { readPage, writePage, invalidateScan } from './server/wiki-files.mjs';
 import { sharedConnection, createSharedClient } from './shared-api-client.mjs';
+import {applyForeignReportNaming} from './apply-foreign-naming.mjs';
+import {normalizeBibliography,publisherFor} from './report-dictionaries.mjs';
+import {prepareWikiSource} from './wiki-source-cleanup.mjs';
 
 export function isPrivateIp(ip) {
   if(ip.includes(':')) {
@@ -89,6 +92,7 @@ async function readArticle(record,body) {
 }
 export async function capture({bytes,filename,title,source_kind='local',source_url=null,source_key,source_meta={},media_type,metadata={}}) {
   metadata=normalizeArticleMetadata(metadata);
+  if(publisherFor({title,filename,source_meta,article_metadata:metadata})?.foreign===true)metadata=normalizeBibliography(metadata);
   const hash=sha(bytes);const id=sha(source_key||`sha256:${hash}`).slice(0,24);
   const m=await manifest(),old=m.documents[id];
   if(old?.sha256===hash&&['parsed','indexed'].includes(old.status))return {...(Object.keys(metadata).length?await updateArticleMetadata(old.id,metadata):old),duplicate:true};
@@ -152,19 +156,22 @@ export async function parseRecord(record,{mineruVramGB,skipArticleAnalysis=false
     record.llm={status:'complete',mode:analysis.mode,model:analysis.model,completed_at:analysis.completed_at,segments:analysis.segments,report_path:analysis.report_path,input_sha256:analysis.input_sha256,...(analysis.entity_version?{entity_version:analysis.entity_version,entity_report_path:analysis.report_path,entity_completed_at:analysis.completed_at}:{}),...(analysis.expectations_version?{expectations_version:analysis.expectations_version,expectations_report_path:analysis.report_path,expectations_completed_at:analysis.completed_at}:{})};
       record.document_type=record.article_metadata.document_type??record.document_type;
     }
+    record=await applyForeignReportNaming(record);
     // Rewrite only relative assets; parsed Markdown and source bytes remain untouched.
     const resolveAsset=target=>/^(https?:|data:|\/|#)/i.test(target)?target:assetUrl(path.resolve(path.dirname(md),target));
     body=body.replace(/!\[([^\]]*)\]\(([^)]+)\)/g,(_,alt,target)=>`![${alt}](${resolveAsset(target)})`)
       .replace(/(<img\b[^>]*\bsrc=["'])([^"']+)(["'])/gi,(_,a,target,c)=>a+resolveAsset(target)+c);
+    const cleaned=await prepareWikiSource(record,body);
+    body=cleaned.body;
     const fm={title:record.title,type:'source',source_kind:record.source_kind,source_url:record.source_url,
       received_at:record.received_at,published_at:record.published_at||null,sha256:record.sha256,parser:record.parser,
       raw_path:record.raw_path,parsed_path:record.parsed_path,review_status:'unread',document_type:record.document_type||null,
       tags:[record.source_kind,record.document_type||({wechat:'公众号文章',x:'X 文章',web:'网页'}[record.source_kind])||'待分类'],
-      ...(record.author?{authors:[record.author]}:{}),...record.article_metadata};
+      ...(record.author?{authors:[record.author]}:{}),...record.article_metadata,wiki_ad_cleanup:cleaned.metadata};
     if(fm.document_type && !Object.hasOwn(record.article_metadata||{},'tags'))fm.tags=[record.source_kind,fm.document_type];
     fm.tags=withEntityTags(fm).tags;
     const header='---\n'+Object.entries(fm).map(([k,v])=>`${k}: ${JSON.stringify(v)}`).join('\n')+'\n---\n';
-    const provenance=`# ${record.title}\n\n> 文献全文。接收时间：${record.received_at}；发布日期：${record.published_at||'待核实'}。\n\n[原始文件](${assetUrl(raw)}) · [解析 Markdown](${assetUrl(md)})${record.page_map?` · [页码与内容块](${assetUrl(dataPath(record.page_map))})`:''}\n\n---\n\n`;
+    const provenance=`# ${record.title}\n\n> 文献全文。接收时间：${record.received_at}；发布日期：${record.published_at||'待核实'}。\n\n[原始文件](${assetUrl(dataPath(record.raw_path))}) · [解析 Markdown](${assetUrl(md)})${record.page_map?` · [页码与内容块](${assetUrl(dataPath(record.page_map))})`:''}\n\n---\n\n`;
     await fs.writeFile(dataPath('wiki',record.wiki_slug+'.md'),header+provenance+body,'utf8');
     invalidateScan();
     await saveRecord(record);return record;
@@ -187,9 +194,10 @@ export async function ingestUrl(value,{metadata={}}={}) {
 
 /** Patch optional fields without rewriting raw/parsed evidence or rerunning OCR. Caller holds the ingest lock. */
 export async function updateArticleMetadata(idOrSlug,input) {
-  const patch=normalizeArticleMetadata(input),m=await manifest();
+  let patch=normalizeArticleMetadata(input);const m=await manifest();
   const record=Object.values(m.documents).find(d=>d.id===idOrSlug||d.wiki_slug===idOrSlug);
   if(!record)throw new Error('找不到已导入的文献');
+  if(publisherFor(record)?.foreign===true)patch=normalizeBibliography(patch,{institution:record.naming?.broker});
   const page=await readPage(record.wiki_slug);
   if(!page)throw new Error('文献尚未解析完成');
   const merged=normalizeArticleMetadata({...record.article_metadata,...patch});

@@ -11,6 +11,7 @@ import { articleMetadataOf } from './article-metadata.mjs';
 import { needsEntityBackfill, withEntityTags } from './article-entities.mjs';
 import {isCompanyReport,needsExpectationsBackfill} from './analyst-expectations.mjs';
 import { compareArticlePriority } from './report-priority.mjs';
+import {normalizeReportMetadata} from './report-dictionaries.mjs';
 
 const VERSION = 'zh-translation-v2-fulltext';
 export const ENRICHMENT_VERSION = 'article-enrichment-v2-inline-proof';
@@ -128,7 +129,7 @@ export async function stageMetadataArticle(record, cfg, staging, {shouldPause}={
   const expectationsOnly=needsExpectationsBackfill(record)&&!entitiesOnly;
   const supplemental=entitiesOnly||expectationsOnly;
   const analysis=await analyzeArticle(record,source,{config:cfg,cacheRoot:path.join(folder,'llm'),entitiesOnly,expectationsOnly,requireExpectations:isCompanyReport(record),requireEntities:!expectationsOnly,requiredFields:supplemental?[]:['summary','tags','key_findings'],shouldPause});
-  analysis.metadata=withEntityTags({...articleMetadataOf(page.frontmatter),...analysis.metadata},page.frontmatter);
+  analysis.metadata=withEntityTags(normalizeReportMetadata(record,{...articleMetadataOf(page.frontmatter),...analysis.metadata}),page.frontmatter);
   const fm={...page.frontmatter,...analysis.metadata,review_status:page.frontmatter.review_status ?? 'unread'};
   const wiki=path.join(folder,'wiki','sources');await fs.mkdir(wiki,{recursive:true});
   await fs.writeFile(path.join(wiki,record.id+'.md'),matter.stringify('',fm).replace(/\n*$/,'\n')+page.body,'utf8');

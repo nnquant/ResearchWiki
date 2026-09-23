@@ -1,5 +1,6 @@
 {
   "dataRoot": "D:/data/researchwiki-investment",
+  "foreignReportNaming": { "enabled": false, "pythonCommand": "python" },
   "host": "127.0.0.1",
   "port": 8018,
   "mcpPort": 3131,
@@ -8,6 +9,7 @@
     "host": "0.0.0.0",
     "port": 8020,
     "publicBaseUrl": "",
+    "gatewayBaseUrl": "",
     "wikiBaseUrl": "",
     "maxConcurrent": 8
   },

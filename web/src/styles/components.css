@@ -101,15 +101,23 @@
 }
 
 /* ---------- Sidebar ---------- */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 10px var(--sp-4);
+  flex: none;
+}
+
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px var(--sp-4) 12px;
+  padding: 0;
   color: var(--text);
   font-weight: 600;
   font-size: var(--fs-md);
-  flex: none;
+  flex: 1;
 }
 
 .brand:hover {
@@ -315,18 +323,51 @@
 
 .sidebar-foot {
   border-top: 1px solid var(--border);
-  padding: var(--sp-2) var(--sp-3);
+  padding: 10px var(--sp-3);
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--sp-2);
   font-size: var(--fs-xs);
-  color: var(--faint);
+  color: var(--muted);
+  background: var(--bg-elev);
   flex: none;
 }
 
-.sidebar-foot .spacer {
-  flex: 1;
+.sidebar-header-actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.agent-access-button,
+.sidebar-collapse-button {
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--muted);
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex: none;
+  transition: background .15s ease, color .15s ease;
 }
+.agent-access-button:hover { background: var(--surface-2); color: var(--text); }
+.sidebar-collapse-button:hover { background: var(--surface-2); color: var(--text); }
+.sidebar-service-status { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius-lg); color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.sidebar-service-status > span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-service-status:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); text-decoration: none; }
+.sidebar-service-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
+.agent-access-dialog { margin: auto; color: var(--text); }
+.agent-access-dialog::backdrop { background: rgb(0 0 0 / 55%); }
+.agent-access-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.agent-access-heading h2 { margin-bottom: 0; }
+.agent-access-dialog p { margin-top: var(--sp-3); }
+.agent-access-label { display: block; margin: var(--sp-5) 0 var(--sp-2); font-weight: 500; }
+.agent-access-prompt { display: block; width: 100%; resize: vertical; line-height: 1.7; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.agent-access-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+.agent-access-feedback { color: var(--ok); min-height: 1.5em; }
+.agent-access-endpoints { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-2) var(--sp-3); border-top: 1px solid var(--border); padding-top: var(--sp-4); margin-top: var(--sp-3); font-size: var(--fs-xs); }
+.agent-access-endpoints dt { color: var(--muted); }
+.agent-access-endpoints dd { margin: 0; overflow-wrap: anywhere; font-family: var(--font-mono); }
+.agent-access-note { padding: var(--sp-4) 0; }
 
 /* ---------- Rail ---------- */
 .rail-tabs {

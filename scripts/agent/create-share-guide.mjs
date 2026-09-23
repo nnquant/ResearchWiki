@@ -19,9 +19,8 @@ export async function buildSkillFiles() {
   files['references/local-graph.md'] = await fs.readFile(path.join(repo, 'skills/research-wiki/references/local-graph.md'), 'utf8');
   files['scripts/research.mjs'] = `import fs from 'node:fs/promises';
 const connection = JSON.parse(await fs.readFile(new URL('../connection.json', import.meta.url), 'utf8'));
-process.env.RESEARCHWIKI_URL = connection.base_url;
-process.env.RESEARCHWIKI_TOKEN = connection.token;
-delete process.env.RESEARCHWIKI_TOKEN_FILE;
+process.env.RESEARCHWIKI_URL ||= connection.base_url;
+if (!process.env.RESEARCHWIKI_TOKEN && !process.env.RESEARCHWIKI_TOKEN_FILE) process.env.RESEARCHWIKI_TOKEN = connection.token;
 const { main } = await import('../client/scripts/agent/cli.mjs');
 main().catch(e => { console.log(JSON.stringify({ error: e.message, code: e.code ?? 'CLIENT_ERROR' })); process.exitCode = 1; });
 `;
@@ -57,7 +56,9 @@ Agent 可直接下载脚本，先阅读，再运行 \`node researchwiki-install.
 
 ## 网络前提
 
-服务地址为 **${baseUrl}**。这是 Tailscale 内网地址，接收方机器必须已获准通过 Tailscale/路由访问该机器的 8020 端口。仅拿到 token 并不会自动获得网络权限；安装脚本不更改 Tailscale 登录或防火墙。
+本入口的服务地址为 **${baseUrl}**。从下载服务获取的脚本会使用该入口配置连接，支持公网、内网和反向代理的路径前缀；不要求固定使用 Tailscale 或 8020 端口。接收方仍需能够访问这个地址，安装脚本不修改路由或防火墙。
+
+通过 Wiki 公网入口接入时，服务基址通常为“Wiki 地址 + /agent”，例如 Wiki 为 http://服务器:10001，服务基址就是 http://服务器:10001/agent。独立 Agent 端口则直接使用 http://服务器:8020。公网入口应使用 HTTPS 保护共享凭据；当前入口如为 HTTP，凭据和材料会明文传输。
 
 ## 已配置的连接信息
 
@@ -85,6 +86,16 @@ ${fence}sh
 node researchwiki-install.mjs --target "/你的Agent技能目录/research-wiki"
 ${fence}
 
+如果文档是转发或离线保存的旧副本，安装时可明确覆盖连接地址（不会改变 token）：
+
+${fence}sh
+node researchwiki-install.mjs --base-url "${baseUrl}"
+${fence}
+
+也可使用 \`--from-url "你下载这篇文档或脚本的完整 URL"\` 从地址中推导服务基址，包括 /agent 或其他代理前缀。优先级为 --base-url、--from-url、下载入口、包内默认地址。重复执行可更新本安装器管理的 Skill；--target 可与上述参数组合。
+
+安装后的 connection.json 可修改 base_url。临时切换也可设置 RESEARCHWIKI_URL；若需要不同凭据，设置 RESEARCHWIKI_TOKEN_FILE 或 RESEARCHWIKI_TOKEN。无需编辑查询脚本。
+
 脚本只更新自己曾安装的目录，遇到同名但非本安装器管理的技能会停止，不覆盖现有内容。凭据写入技能目录的 connection.json，后续调用自动读取，无需每次粘贴 token。刷新客户端技能列表或新开会话后生效；如果客户端未自动发现，显式加载安装目录中的 SKILL.md。
 
 ## 验证与使用
@@ -102,7 +113,7 @@ ${fence}
 
 - 查询与正文检索都支持标签交集、并集和排除，公司代码保留前导零。
 - 引用前读取文档的明确 revision_id 和 block_id；不要把搜索摘要当成已核验原文。
-- 401：凭据无效，请向维护者索取新版安装文档；429：按 Retry-After 稍后重试；连接超时或 SERVICE_UNAVAILABLE：先核查内网可达性和服务状态。
+- 401：凭据无效，请向维护者索取新版安装文档；429：按 Retry-After 稍后重试；连接超时或 SERVICE_UNAVAILABLE：先核查当前服务地址的可达性和服务状态。
 - 网络检查失败时安装文件仍保留，修好网络后重新运行输出的 describe 命令即可。安装成功不表示可绕过网络 ACL。
 - 本次 Skill 通过 CLI 即可完整查询，不会修改全局 MCP 配置。已有远程 MCP 客户端可另行使用上面的 URL 和 Bearer header；不支持静态 Bearer 的连接器不适用此 MCP 配置。
 
@@ -123,7 +134,7 @@ ${fence}
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { config, dataPath } = await import('../common.mjs');
-  const baseUrl = process.argv[2] || config.agent?.publicBaseUrl;
+  const baseUrl = process.argv[2] || config.agent?.gatewayBaseUrl || config.agent?.publicBaseUrl;
   if (!baseUrl) throw new Error('请指定已验证的远程地址：node scripts/agent/create-share-guide.mjs http://服务器:8020');
   const token = await fs.readFile(dataPath('runtime', 'mcp-read-token'), 'utf8');
   console.log(JSON.stringify(await createShareGuide({ baseUrl, token, outputDir: path.join(repo, 'outputs/private') })));

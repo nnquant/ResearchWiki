@@ -12,7 +12,7 @@ import {EXPECTATIONS_FIELD,EXPECTATIONS_VERSION,groundAnalystExpectations,expect
 import {articleOutputSchema,schemaResponseFormat,validateOutputSchema,OUTPUT_SCHEMA_VERSION} from './article-output-schema.mjs';
 
 export const PROMPT_VERSION = 'article-fields-v11-output-groups';
-const excluded = new Set(['personal_rating', 'review_status']);
+const excluded = new Set(['personal_rating', 'review_status', 'topic_primary']);
 const fields = Object.fromEntries(Object.entries(articleSchema.properties).filter(([key]) => !excluded.has(key)));
 const normalFieldGuide = Object.fromEntries(Object.entries(fields).filter(([key])=>!ENTITY_FIELDS.includes(key)&&key!==EXPECTATIONS_FIELD).map(([key,s])=>[key,{type:s.type,title:s.title,...(s.enum?{enum:s.enum}:{}),...(s.format?{format:s.format}:{})}]));
 const entityInstructions = 'metadata.companies、metadata.industries、metadata.subfields 必须显式返回数组，必须放在 metadata 内，不能放到顶层，没有相关对象时用 []。三个数组的每个条目都是 {"name":"实体名","quote":"支持该实体的原文连续短引文","page":1}，名称与证据不可分开；不要为它们另写 evidence，不要返回字符串数组。companies 只列正文实质讨论的公司（主体、同行、客户、供应商），排除报告发布券商、作者雇主和免责声明名单。公司名保留原文名称，原文有证券代码时可以括号附上；不要凭记忆翻译、猜中文别名或证券代码。industries 使用中文行业名，例如半导体、银行、汽车、化妆品；subfields 只收录具体产品、技术、应用，如 AI、HBM、GPU、CPU、DRAM、NAND、定制芯片、液冷，通用缩写保留大写；不要把银行、汽车、黄金、大宗商品、高科技制造等宽泛行业或资产再次列为细分领域。同一概念不要在 industries 与 subfields 重复。不能因提及某公司就补上其全部业务。公司最多30项、行业最多15项、细分领域最多30项；优先报告主要研究对象与核心讨论，忽略只有名单或排名而无实质讨论的偶然提及。';

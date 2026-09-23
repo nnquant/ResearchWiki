@@ -41,6 +41,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
+      '/agent': { target: backend, changeOrigin: true, headers: { origin: backend } },
       '/api': { target: backend, changeOrigin: true, headers: { origin: backend } },
       '/assets': { target: backend, changeOrigin: true, headers: { origin: backend } },
     },

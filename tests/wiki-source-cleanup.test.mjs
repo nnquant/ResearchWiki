@@ -1,0 +1,55 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+const testRoot=path.resolve('work','cleanup-pipeline-'+process.pid);
+process.env.WIKI_DATA_ROOT=testRoot;
+const {ensureDirs,dataPath,sha,config,manifest}=await import('../scripts/common.mjs');
+const {capture,parseRecord,updateArticleMetadata}=await import('../scripts/ingest.mjs');
+const {readPage}=await import('../scripts/server/wiki-files.mjs');
+const {cleanedWikiBody}=await import('../scripts/query/index.mjs');
+const {cleanWikiAds}=await import('../scripts/wiki-ad-cleanup.mjs');
+const rules=JSON.parse(await fs.readFile(new URL('../config/wiki-ad-cleanup.json',import.meta.url),'utf8'));
+config.foreignReportNaming={enabled:false};
+await ensureDirs();
+test.after(async()=>{await fs.rm(testRoot,{recursive:true,force:true});});
+test('cached PDF ingestion and reparse clean only Wiki, preserve evidence and metadata patches',async()=>{
+  const raw=Buffer.from('%PDF-fixture original');
+  let doc=await capture({bytes:raw,filename:'fixture.pdf',metadata:{authors:['Analyst']}});
+  const folder=dataPath('parsed',doc.id,doc.revision);await fs.mkdir(folder,{recursive:true});
+  const source=`## PDF 第 1 页\n本文由ima -【爱分享】的财经资讯收集整理\n![](images/${rules.imageHashes[0]}.jpg)\n## PDF 第 2 页\n${'Research revenue 12%. '.repeat(20)}\n![chart](images/chart.jpg)\n`;
+  await fs.writeFile(path.join(folder,'document.md'),source);
+  await fs.writeFile(path.join(folder,'pages.md'),source);
+  doc={...doc,parser:'MinerU',parsed_path:path.relative(testRoot,path.join(folder,'document.md'))};
+  doc=await parseRecord(doc,{skipArticleAnalysis:true});
+  const page=await readPage(doc.wiki_slug),clean=cleanedWikiBody(page.frontmatter,page.body);
+  assert.doesNotMatch(clean,/爱分享|第 1 页/);assert.match(clean,/第 2 页/);assert.match(clean,/chart.jpg/);
+  assert.equal(page.frontmatter.wiki_ad_cleanup.removed.image,1);
+  const audit=JSON.parse(await fs.readFile(dataPath(page.frontmatter.wiki_ad_cleanup.audit_path),'utf8'));
+  assert.ok(audit.removals.length>=3);assert.equal(audit.cleaned_body_sha256,sha(clean));
+  await updateArticleMetadata(doc.id,{authors:['New Analyst']});
+  assert.equal((await readPage(doc.wiki_slug)).body,page.body);
+  assert.deepEqual((await readPage(doc.wiki_slug)).frontmatter.wiki_ad_cleanup,page.frontmatter.wiki_ad_cleanup);
+  await parseRecord((await manifest()).documents[doc.id],{skipArticleAnalysis:true});
+  assert.equal((await readPage(doc.wiki_slug)).body,page.body);
+  assert.equal(await fs.readFile(dataPath(doc.raw_path),'utf8'),raw.toString());
+  for(const name of ['pages.md','document.md'])assert.equal(await fs.readFile(path.join(folder,name),'utf8'),source);
+});
+test('unpaged Markdown is cleaned and searchable without synthetic PDF pages; no-hit imports stay intact',async()=>{
+  for(const advertising of [true,false]) {
+    const source='# Research\n'+('广告行业收入增长。Analyst contact remains. '.repeat(12))+(advertising?'\n获取一手资料请加QQ：390278005\n':'');
+    const doc=await parseRecord(await capture({bytes:Buffer.from(source),filename:'report.md'}),{skipArticleAnalysis:true});
+    const page=await readPage(doc.wiki_slug),clean=cleanedWikiBody(page.frontmatter,page.body);
+    assert.equal(page.frontmatter.wiki_ad_cleanup.changed,advertising);
+    assert.match(clean,/广告行业收入增长/);assert.doesNotMatch(clean,/390278005|PDF 第/);
+    if(!advertising)assert.equal(clean,source);
+    assert.equal(await fs.readFile(dataPath(doc.parsed_path),'utf8'),source);
+    assert.equal(await fs.readFile(dataPath(doc.raw_path),'utf8'),source);
+    assert.equal(cleanWikiAds(clean,{unpaged:true}).body,clean);
+  }
+  const fm={wiki_ad_cleanup:{version:rules.version,content_scope:'source-markdown'}};
+  assert.throws(()=>cleanedWikiBody(fm,'missing boundary'),/正文边界/);
+  assert.equal(cleanedWikiBody(fm,'# provenance\r\n<!-- wiki-clean-source-body -->\r\nResearch\r\n'),'Research\r\n');
+  const text='---\ntitle: 爱分享盈策\n---\nResearch\n爱分享盈策\n';
+  assert.equal(cleanWikiAds(text,{unpaged:true}).body,'---\ntitle: 爱分享盈策\n---\nResearch\n\n');
+});

@@ -5,7 +5,7 @@ import { Link } from 'react-router';
 
 const groups = [
   { title: '文献信息', keys: ['summary', 'research_category', 'authors', 'institutions', 'doi', 'arxiv_id', 'language', 'abstract'] },
-  { title: '研究对象', keys: ['companies', 'industries', 'subfields'] },
+  { title: '研究对象', keys: ['topic_primary', 'companies', 'industries', 'subfields'] },
   { title: '研究信息', keys: ['asset_classes', 'markets', 'research_topics', 'research_question', 'strategy_frequency', 'sample_start', 'sample_end', 'sample_period', 'methods', 'key_findings', 'key_evidence', 'limitations', 'reproducible_experiments', 'personal_rating'] },
 ];
 

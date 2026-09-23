@@ -53,10 +53,10 @@ export async function callTool(name, args, { timeoutMs = 60000 } = {}) {
 export async function mcpHealth() {
   try {
     const res = await fetch(`http://127.0.0.1:${config.mcpPort}/health`, { signal: AbortSignal.timeout(2000) });
-    if (!res.ok) return { ok: false };
+    if (!res.ok) return { ok: false, error: `GBrain 健康检查返回 HTTP ${res.status}` };
     const body = await res.json();
-    return { ok: body.status === 'ok', version: body.version ?? null };
-  } catch {
-    return { ok: false };
+    return { ok: body.status === 'ok', version: body.version ?? null, error: body.status === 'ok' ? null : 'GBrain 健康检查未通过' };
+  } catch (error) {
+    return { ok: false, error: error.cause?.code === 'ECONNREFUSED' ? `GBrain 未启动或未监听 ${config.mcpPort} 端口` : `无法连接 GBrain :${config.mcpPort}（${error.name === 'TimeoutError' ? '检查超时' : '连接失败'}）` };
   }
 }

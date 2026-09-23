@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { NavLink, Link } from 'react-router';
 import { useUi } from './UiContext';
 import { useStatus } from '../api/hooks';
 import { PageTree } from './PageTree';
+import { AgentAccessDialog } from './AgentAccessDialog';
 
 const NAV = [
   { to: '/', label: '研究工作台', end: true },
@@ -15,12 +17,33 @@ const NAV = [
 export function Sidebar() {
   const { openPalette, openNewPage, setSidebarOpen } = useUi();
   const { data: status, isError } = useStatus();
-  const hasError = isError || (status ? !status.services.postgres.ok || !status.services.mcp.ok || !status.services.ollama.ok : false);
+  const [agentOpen, setAgentOpen] = useState(false);
+  const issues = status ? [
+    !status.services.postgres.ok && '数据库异常',
+    (!status.services.ollama.ok || status.services.ollama.model_present === false) && 'Embedding 异常',
+  ].filter(Boolean) as string[] : [];
+  const hasError = isError || issues.length > 0;
+  const issueDetail = isError ? '无法获取服务状态' : [status?.services.postgres.error, status?.services.ollama.error].filter(Boolean).join('；') || issues.join('；');
   return (
     <aside className="sidebar">
-      <Link to="/" className="brand">
-        <span>ResearchWiki</span>
-      </Link>
+      <div className="sidebar-header">
+        <Link to="/" className="brand">ResearchWiki</Link>
+        <div className="sidebar-header-actions">
+          <button className="agent-access-button" title="Agent 接入指南" aria-label="Agent 接入指南" aria-haspopup="dialog" onClick={() => setAgentOpen(true)}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 3v3M9 3h6M3 12H1m22 0h-2" />
+              <rect x="3" y="6" width="18" height="15" rx="4" />
+              <path d="M8 11v2m8-2v2m-7 4h6" />
+            </svg>
+          </button>
+          <button className="sidebar-collapse-button" title="收起侧栏（[）" aria-label="收起侧栏" onClick={() => setSidebarOpen(false)}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="3" />
+              <path d="M9 4v16" />
+            </svg>
+          </button>
+        </div>
+      </div>
       <button className="sidebar-search" onClick={() => openPalette()}>
         <span>搜索页面或内容…</span>
 
@@ -47,12 +70,13 @@ export function Sidebar() {
         <PageTree />
       </div>
       {hasError && <div className="sidebar-foot">
-        <span className="chip danger" role="status" title={isError ? '无法获取服务状态' : status ? `Postgres ${status.services.postgres.ok ? '正常' : '异常'} · MCP ${status.services.mcp.ok ? '正常' : '异常'} · Ollama ${status.services.ollama.ok ? '正常' : '异常'}` : ''}>
-          {isError ? '服务连接失败' : '服务异常'}
-        </span>
-        <span className="spacer" />
-        <button className="btn ghost sm" title="收起侧栏" onClick={() => setSidebarOpen(false)}>‹</button>
+        <Link to="/status" className="sidebar-service-status" title={`${issueDetail}。点击查看状态详情`}>
+          <span className="sidebar-service-dot" aria-hidden="true" />
+          <span>{isError ? '服务连接失败' : issues.length === 1 ? issues[0] : `${issues.length} 项服务异常`}</span>
+          <span aria-hidden="true">↗</span>
+        </Link>
       </div>}
+      {agentOpen && <AgentAccessDialog onClose={() => setAgentOpen(false)} />}
     </aside>
   );
 }

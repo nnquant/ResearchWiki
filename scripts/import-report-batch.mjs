@@ -39,18 +39,18 @@ export async function exportProcessed(plan, item, record, { parseOnly = false } 
   if (!within(plan.output, target)) throw new Error('输出目录越界');
   await fs.mkdir(target, { recursive: true });
   const previous = await readJson(path.join(target, 'report.json'), null);
-  if (previous && (previous.source_relative !== item.relative || previous.sha256 !== record.sha256)) throw new Error('处理目录已存在不同原件，拒绝覆盖');
+  if (previous && (previous.sha256 !== record.sha256 || (previous.source_relative !== item.relative&&!record.naming))) throw new Error('处理目录已存在不同原件，拒绝覆盖');
   const raw = dataPath(record.raw_path);
   const bytes = await fs.readFile(raw);
   if (sha(bytes) !== record.sha256) throw new Error('入库原件哈希校验失败');
-  const source = path.resolve(plan.source, item.relative);
+  const source = record.naming?.status==='ready'&&record.source_meta?.import_path?path.resolve(record.source_meta.import_path):path.resolve(plan.source, item.relative);
   if (!within(plan.source, source)) throw new Error('原件目录越界');
   const sourceExists = await fs.access(source).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
   if (sourceExists) {
     const linked = await deduplicateFile(source, raw, record.sha256);
     if (linked.status === 'different_content') throw new Error('下载原件与入库原件不一致，拒绝导出');
   }
-  const originalFile = reportOriginalName(plan);
+  const originalFile = record.naming?.status==='ready'?record.filename:reportOriginalName(plan);
   const pdf = path.join(target, originalFile);
   try {
     await exportFile(raw, pdf);
@@ -59,7 +59,7 @@ export async function exportProcessed(plan, item, record, { parseOnly = false } 
   await exportTree(parsed, path.join(target, 'parsed'));
   const report = {
     ...(plan.report_category ? { report_category: plan.report_category, original_file: originalFile } : {}),
-    status: parseOnly ? 'parsed' : 'indexed', completed_at: now(), source_relative: item.relative, source_file: path.join(plan.source, item.relative), original_filename: path.basename(item.relative),
+    status: parseOnly ? 'parsed' : 'indexed', completed_at: now(), source_relative: path.relative(plan.source,source).replaceAll('\\','/'), source_file: source, original_filename: record.naming?.original_filename??path.basename(item.relative), canonical_filename:record.naming?.status==='ready'?record.filename:null,naming:record.naming??null,
     sha256: record.sha256, report_date_for_sort: item.date, date_source: item.date_source, month_directory: item.month,
     title: record.title, pages: record.pages, characters: record.characters, parser: record.parser, remote_parser: record.remote_parser,
     wiki_slug: record.wiki_slug, wiki_url: parseOnly ? null : `http://127.0.0.1:${config.port}/page/${record.wiki_slug.split('/').map(encodeURIComponent).join('/')}`,

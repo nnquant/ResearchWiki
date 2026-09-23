@@ -48,9 +48,9 @@ function json(res, status, data) {
 }
 
 /** Dedicated authenticated surface: never registers Wiki status, edit, ingest or admin routes. */
-export function createAgentHttpServer({ settings, authorize, execute, assetHandler, installHandler, health = async () => ({}), sharedAdmission = false }) {
+export function createAgentHttpHandler({ settings, authorize, execute, assetHandler, installHandler, health = async () => ({}), sharedAdmission = false }) {
   let active = 0;
-  const server = http.createServer(async (req, res) => {
+  return async (req, res) => {
     res.setHeader('cache-control', 'no-store');
     res.setHeader('x-content-type-options', 'nosniff');
     res.setHeader('content-security-policy', "default-src 'none'; frame-ancestors 'none'; sandbox");
@@ -62,8 +62,13 @@ export function createAgentHttpServer({ settings, authorize, execute, assetHandl
       if (!settings.allowedHosts.includes(req.headers.host?.toLowerCase())) throw new HttpError(403, '不接受此 Host', { code: 'FORBIDDEN_HOST' });
       if (req.headers.origin && !settings.allowedOrigins.includes(req.headers.origin)) throw new HttpError(403, '不接受此 Origin', { code: 'FORBIDDEN_ORIGIN' });
       const url = new URL(req.url, 'http://localhost');
+      if (settings.basePath) {
+        if (!url.pathname.startsWith(settings.basePath + '/') && url.pathname !== settings.basePath) throw new HttpError(404, '接口不存在');
+        url.pathname = url.pathname.slice(settings.basePath.length) || '/';
+      }
+      const baseUrl = settings.publicBaseUrl ?? `${req.socket.encrypted ? 'https' : 'http'}://${req.headers.host.toLowerCase()}${settings.basePath ?? ''}`;
       if (url.pathname.startsWith('/install/')) {
-        if (installHandler && await installHandler(req, res, url)) return;
+        if (installHandler && await installHandler(req, res, url, { baseUrl })) return;
         throw new HttpError(404, '安装资源不存在', { code: 'NOT_FOUND' });
       }
       if (!await authorize(req)) {
@@ -75,7 +80,6 @@ export function createAgentHttpServer({ settings, authorize, execute, assetHandl
         throw new HttpError(429, '研究服务繁忙，请稍后重试', { code: 'TOO_MANY_REQUESTS' });
       }
       active++; entered = true;
-      const baseUrl = settings.publicBaseUrl ?? `http://${req.headers.host.toLowerCase()}`;
       const invoke = async (operation, input, { signal } = {}) => {
         const started = Date.now(); let result, failure;
         try {
@@ -121,7 +125,11 @@ export function createAgentHttpServer({ settings, authorize, execute, assetHandl
       if (status === 429) res.setHeader('retry-after', String(error.data?.retry_after ?? 2));
       json(res, status, { error: status >= 500 ? '研究服务暂时不可用' : error.message, code: error.data?.code ?? (status >= 500 ? 'SERVICE_UNAVAILABLE' : 'REQUEST_FAILED') });
     } finally { if (entered) active--; res.removeListener('close', cancel); }
-  });
+  };
+}
+
+export function createAgentHttpServer(options) {
+  const server = http.createServer(createAgentHttpHandler(options));
   server.requestTimeout = 130000;
   server.headersTimeout = 15000;
   return server;
